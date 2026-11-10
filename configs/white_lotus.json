@@ -1,0 +1,18 @@
+{
+  "sectName": "Way of the White Lotus",
+  "factionKey": "sects_white_lotus",
+  "factionId": 1900000000,
+  "leaderId": 1900000100,
+  "forename": "Wei",
+  "surname": "Yun",
+  "isMale": true,
+  "artSet": "3k_main_art_set_generic_male_48_general_wood",
+  "subtype": "3k_general_wood",
+  "voiceover": "vo_actor_group_generic_any_male_wood_general",
+  "primaryColour": "6A0DAD",
+  "secondaryColour": "E0C060",
+  "cityRegion": "3k_main_jianan_capital",
+  "cityRegionId": 2130431103,
+  "startX": 620,
+  "startY": 390
+}

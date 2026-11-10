@@ -1,0 +1,4 @@
+building_chain	building_level	building_set	exclude
+#building_set_to_building_junctions_tables;0;db/building_set_to_building_junctions_tables/sects_cults			
+sects_hideout		3k_main_building_set_all	false
+sects_hideout		3k_dlc05_bandit_resource_buildings	false

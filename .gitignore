@@ -1,0 +1,6 @@
+/backup_ak_startpos/
+/screenshots/
+/build/*
+!/build/SectsCults_white_lotus.pack
+__pycache__/
+*.py[cod]

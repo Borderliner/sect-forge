@@ -1,0 +1,6 @@
+key	text	tooltip
+#Loc;1;text/db/sects_cults.loc		
+effect_bundles_localised_title_sects_m0_bundle	Sect Belief: Asceticism	false
+effect_bundles_localised_description_sects_m0_bundle	A test belief used to prove the sect pipeline works.	false
+building_chains_onscreen_name_sects_hideout	Sect Hideout	false
+building_chains_onscreen_description_sects_hideout	A concealed place where a sect gathers, trains and hides.	false
