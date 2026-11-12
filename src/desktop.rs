@@ -13,7 +13,7 @@ use std::{
 use anyhow::{Context as _, Result};
 use gpui::{
     Animation, AnimationExt as _, AnyElement, App, Application, AssetSource, Bounds, Context, Div,
-    Entity, Hsla, ObjectFit, PathPromptOptions, Pixels, Point, Render, ScrollHandle,
+    Entity, Hsla, ObjectFit, PathPromptOptions, Pixels, Point, Render, Rgba, ScrollHandle,
     ScrollWheelEvent, SharedString, Stateful, StyledImage as _, Subscription, TitlebarOptions,
     Window, WindowBounds, WindowOptions, div, ease_in_out, img, linear_color_stop, linear_gradient,
     point, prelude::*, px, relative, rgb, rgba, size,
@@ -21,15 +21,16 @@ use gpui::{
 use gpui_component::{
     Disableable, Root, Selectable, Sizable, Theme, ThemeMode,
     button::Button,
-    input::{Input, InputEvent, InputState},
+    color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
+    input::{Input, InputEvent, InputState, NumberInput, NumberInputEvent, StepAction},
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow},
 };
 use rpfm_lib::files::{Container, pack::Pack};
 
 use crate::{
     config::{
-        ANCILLARIES, CLASSES, Config, HEPU, SETTLEMENTS, SLOTS, Settlement, Variant, WARLORDS,
-        output_dir,
+        ANCILLARIES, CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MIN_FOUNDER_AGE, SETTLEMENTS, SLOTS,
+        Settlement, Variant, WARLORDS, output_dir,
     },
     export,
     game::{self, Game, MAP_IMAGE, Trait, TraitCategory},
@@ -194,6 +195,8 @@ struct Editor {
     inspecting: Option<String>,
     motion: usize,
     fields: [Entity<InputState>; 5],
+    colour_pickers: [Entity<ColorPickerState>; 2],
+    founder_age: Entity<InputState>,
     search: Entity<InputState>,
     pack_search: Entity<InputState>,
     subscriptions: Vec<Subscription>,
@@ -260,31 +263,112 @@ impl Editor {
             config.secondary_colour.as_str(),
         ]
         .map(|value| cx.new(|cx| InputState::new(window, cx).default_value(value.to_owned())));
+        let colour_pickers = [&config.primary_colour, &config.secondary_colour].map(|hex| {
+            cx.new(|cx| ColorPickerState::new(window, cx).default_value(rgb(colour(hex, LINE))))
+        });
+        let founder_age = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(config.founder_age.to_string())
+                .validate(|text, _| {
+                    text.len() <= 2 && text.bytes().all(|byte| byte.is_ascii_digit())
+                })
+        });
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search by name"));
         let pack_search = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Filter packs by name or Workshop ID")
         });
         let mut subscriptions = Vec::new();
         for (index, input) in fields.iter().enumerate() {
-            subscriptions.push(cx.subscribe(input, move |editor, input, event, cx| {
-                if matches!(event, InputEvent::Change) {
-                    let value = input.read(cx).value().to_string();
-                    match index {
-                        0 if editor.config.sect_name != value => {
-                            editor.config.sect_name = value;
-                            editor.config.faction_key = None;
+            subscriptions.push(cx.subscribe_in(
+                input,
+                window,
+                move |editor, input, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        let value = input.read(cx).value().to_string();
+                        if index >= 3 {
+                            let hex = value.trim().trim_start_matches('#');
+                            if hex.len() == 6
+                                && let Ok(colour) = u32::from_str_radix(hex, 16)
+                            {
+                                editor.colour_pickers[index - 3].update(cx, |picker, cx| {
+                                    picker.set_value(rgb(colour), window, cx);
+                                });
+                            }
                         }
-                        0 => {}
-                        1 => editor.config.surname = value,
-                        2 => editor.config.forename = value,
-                        3 => editor.config.primary_colour = value,
-                        _ => editor.config.secondary_colour = value,
+                        match index {
+                            0 if editor.config.sect_name != value => {
+                                editor.config.sect_name = value;
+                                editor.config.faction_key = None;
+                            }
+                            0 => {}
+                            1 => editor.config.surname = value,
+                            2 => editor.config.forename = value,
+                            3 => editor.config.primary_colour = value,
+                            _ => editor.config.secondary_colour = value,
+                        }
+                        editor.exported = None;
+                        cx.notify();
                     }
-                    editor.exported = None;
-                    cx.notify();
-                }
-            }));
+                },
+            ));
         }
+        for (index, picker) in colour_pickers.iter().enumerate() {
+            subscriptions.push(cx.subscribe_in(
+                picker,
+                window,
+                move |editor, _, event: &ColorPickerEvent, window, cx| {
+                    if let ColorPickerEvent::Change(Some(colour)) = event {
+                        let Rgba { r, g, b, .. } = Rgba::from(*colour);
+                        let [r, g, b] = [r, g, b].map(|channel| (channel * 255.).round() as u8);
+                        let hex = format!("{r:02X}{g:02X}{b:02X}");
+                        editor.fields[index + 3].update(cx, |input, cx| {
+                            input.set_value(hex, window, cx);
+                        });
+                    }
+                },
+            ));
+        }
+        subscriptions.push(cx.subscribe_in(
+            &founder_age,
+            window,
+            |editor, input, event: &InputEvent, window, cx| {
+                let value = input.read(cx).value();
+                let parsed = value.parse::<u8>().ok();
+                let range = MIN_FOUNDER_AGE..=MAX_FOUNDER_AGE;
+                let age = match event {
+                    InputEvent::Change => parsed.filter(|age| range.contains(age)),
+                    InputEvent::Blur | InputEvent::PressEnter { .. } => {
+                        let age = parsed
+                            .unwrap_or(editor.config.founder_age)
+                            .clamp(MIN_FOUNDER_AGE, MAX_FOUNDER_AGE);
+                        let text = age.to_string();
+                        if value.as_ref() != text {
+                            input.update(cx, |input, cx| input.set_value(text, window, cx));
+                        }
+                        Some(age)
+                    }
+                    InputEvent::Focus => None,
+                };
+                if let Some(age) = age
+                    && age != editor.config.founder_age
+                {
+                    editor.config.founder_age = age;
+                    editor.edited(cx);
+                }
+            },
+        ));
+        subscriptions.push(cx.subscribe_in(
+            &founder_age,
+            window,
+            |editor, input, event: &NumberInputEvent, window, cx| {
+                let age = editor.config.founder_age;
+                let age = match event {
+                    NumberInputEvent::Step(StepAction::Increment) => (age + 1).min(MAX_FOUNDER_AGE),
+                    NumberInputEvent::Step(StepAction::Decrement) => (age - 1).max(MIN_FOUNDER_AGE),
+                };
+                input.update(cx, |input, cx| input.set_value(age.to_string(), window, cx));
+            },
+        ));
         subscriptions.push(cx.subscribe(&search, |editor, _, event, cx| {
             if matches!(event, InputEvent::Change) {
                 editor.results_page = 0;
@@ -333,6 +417,8 @@ impl Editor {
             inspecting: None,
             motion: 0,
             fields,
+            colour_pickers,
+            founder_age,
             search,
             pack_search,
             subscriptions,
@@ -559,6 +645,9 @@ impl Editor {
                                     input.set_value(value.to_owned(), window, cx)
                                 });
                             }
+                            editor.founder_age.update(cx, |input, cx| {
+                                input.set_value(config.founder_age.to_string(), window, cx);
+                            });
                             editor.config = config;
                             editor.select_source(None);
                             if let Some(path) = source {
@@ -784,26 +873,23 @@ impl Editor {
             .w_full()
     }
 
-    fn field(&self, index: usize, label: &'static str) -> Div {
-        let prefix = if index == 3 || index == 4 {
-            let value = if index == 3 {
-                &self.config.primary_colour
-            } else {
-                &self.config.secondary_colour
-            };
-            Some(dot(colour(value, LINE), 15.))
-        } else {
-            None
-        };
+    fn colour_field(&self, index: usize, label: &'static str) -> Div {
         col()
             .flex_1()
             .min_w_0()
             .gap_2()
             .child(caption(label))
             .child(
-                Input::new(&self.fields[index])
-                    .w_full()
-                    .when_some(prefix, |input, prefix| input.prefix(prefix)),
+                row_ui()
+                    .items_center()
+                    .gap_1()
+                    .child(ColorPicker::new(&self.colour_pickers[index]).cursor_pointer())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Input::new(&self.fields[index + 3]).w_full()),
+                    ),
             )
     }
 
@@ -976,7 +1062,7 @@ impl Editor {
                 .child(col().flex_1().min_w_0().gap_5()
                     .child(panel().gap_4().child(self.heading("Banner", 30.))
                         .child(self.name_field(NameField::Faction, cx))
-                        .child(row_ui().gap_4().child(self.field(3, "Primary colour")).child(self.field(4, "Secondary colour")))
+                        .child(row_ui().gap_4().child(self.colour_field(0, "Primary colour")).child(self.colour_field(1, "Secondary colour")))
                         .child(row_ui().gap_2().items_center().flex_wrap()
                             .children([("A34434","D3AD6C"), ("326151","D2BA78"), ("34496D","D0D7DD"), ("644F73","CEADD4"), ("3E422C","B4AF75")].map(|(primary, secondary)| {
                                 control(format!("palette-{primary}"), self.config.primary_colour == primary && self.config.secondary_colour == secondary)
@@ -1180,7 +1266,7 @@ impl Editor {
             .gap_5()
             .child(self.header(
                 "Founding leader",
-                "Set your founder’s class, appearance, traits and starting equipment.",
+                "Set your founder’s age, class, appearance, traits and starting equipment.",
             ))
             .child(
                 row_ui()
@@ -1210,7 +1296,17 @@ impl Editor {
                     row_ui()
                         .gap_4()
                         .child(self.name_field(NameField::Family, cx))
-                        .child(self.name_field(NameField::Given, cx)),
+                        .child(self.name_field(NameField::Given, cx))
+                        .child(
+                            col()
+                                .w(px(148.))
+                                .flex_shrink_0()
+                                .gap_2()
+                                .child(caption(format!(
+                                    "Age · {MIN_FOUNDER_AGE}–{MAX_FOUNDER_AGE}"
+                                )))
+                                .child(NumberInput::new(&self.founder_age).w_full()),
+                        ),
                 )
             })
             .when(self.founder_tab != FounderTab::Traits, |element| {
@@ -2338,7 +2434,7 @@ impl Editor {
                     .child(panel().gap_3()
                         .child(self.heading("Campaign", 28.))
                         .child(summary_line("Faction", self.config.sect_name.clone()))
-                        .child(summary_line("Founder", format!("{} {} · {}", self.config.surname, self.config.forename, class.1)))
+                        .child(summary_line("Founder", format!("{} {} · {} · Age {}", self.config.surname, self.config.forename, class.1, self.config.founder_age)))
                         .child(summary_line("Settlement", format!("{} · {}", site.name, site.owner_label())))
                         .child(summary_line("Victory", self.config.variant.objective().to_owned()))
                         .child(summary_line("Territory", if self.config.sect_mode { "One commandery" } else { "Unlimited" }.into())))

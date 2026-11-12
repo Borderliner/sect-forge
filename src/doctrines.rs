@@ -717,6 +717,7 @@ pub fn influence_thresholds(variant: Variant) -> String {
 const TECH_TREE: &str = "ui/tech_trees/tech_tree.twui.xml";
 
 pub const BANDIT_TREE: &str = "ui/tech_trees/tech_tree_3k_dlc05_subculture_bandits.twui.xml";
+const SECT_BACKDROP: &str = "ui/sect_forge/sect_reform_backdrop.png";
 
 pub fn write(
     game: &Pack,
@@ -884,6 +885,13 @@ pub fn write(
         path,
         &layout(&raw(source, path)?, key, config.variant, &donors)?,
     )?;
+    if !cult {
+        add(
+            pack,
+            SECT_BACKDROP,
+            include_bytes!("data/sect-reform-backdrop.png"),
+        )?;
+    }
     influence(game, pack, loc, config, key, &suffix)?;
     Ok(())
 }
@@ -1112,6 +1120,41 @@ fn hide_han_component(component: &mut Element, faction: &str) {
     callbacks.children.push(XMLNode::Element(callback));
 }
 
+fn add_sect_backdrop(root: &mut Element, faction: &str) -> Result<()> {
+    const COMPONENT: &str = "A43B02FF-3366-4F25-817F80657201F34F";
+    const IMAGE: &str = "DB78C669-C258-4AB3-BF08D0DCF1968851";
+    const STATE: &str = "B727A1D0-6DD1-4707-B146852A440976D9";
+    let hierarchy = root
+        .get_mut_child("hierarchy")
+        .context("Missing research hierarchy")?;
+    let panel = find_mut(hierarchy, "tech_tree").context("Missing research panel")?;
+    let mut backdrop = Element::new("sect_forge_reform_backdrop");
+    backdrop.attributes.insert("this".into(), COMPONENT.into());
+    panel.children.insert(0, XMLNode::Element(backdrop));
+
+    let definition = format!(
+        r##"<sect_forge_reform_backdrop id="sect_forge_reform_backdrop" this="{COMPONENT}" uniqueguid="{COMPONENT}" currentstate="{STATE}" defaultstate="{STATE}">
+  <callbackwithcontextlist>
+    <callback_with_context callback_id="ScreenSizedComponent"/>
+    <callback_with_context callback_id="ContextVisibilitySetter" context_object_id="CcoCampaignRoot" context_function_id="PlayersFaction.FactionRecordContext.Key == &quot;{faction}&quot;"/>
+  </callbackwithcontextlist>
+  <componentimages>
+    <component_image this="{IMAGE}" uniqueguid="{IMAGE}" imagepath="{SECT_BACKDROP}" width="1672" height="941"/>
+  </componentimages>
+  <states>
+    <default this="{STATE}" uniqueguid="{STATE}" name="default" width="1920" height="1080" texthbehaviour="Never split">
+      <imagemetrics><image componentimage="{IMAGE}" width="1920" height="1080" colour="#DEDAD2FF"/></imagemetrics>
+    </default>
+  </states>
+</sect_forge_reform_backdrop>"##
+    );
+    root.get_mut_child("components")
+        .context("Missing research components")?
+        .children
+        .push(XMLNode::Element(Element::parse(definition.as_bytes())?));
+    Ok(())
+}
+
 fn layout(bytes: &[u8], key: &str, variant: Variant, donors: &[&str; 3]) -> Result<Vec<u8>> {
     let cult = variant == Variant::Cult;
     let holder = if cult {
@@ -1234,6 +1277,9 @@ fn layout(bytes: &[u8], key: &str, variant: Variant, donors: &[&str; 3]) -> Resu
         }
     }
     components.children.extend(new_definitions);
+    if !cult {
+        add_sect_backdrop(&mut root, key)?;
+    }
     let mut output = Vec::new();
     root.write_with_config(&mut output, EmitterConfig::new().perform_indent(false))?;
     Ok(output)

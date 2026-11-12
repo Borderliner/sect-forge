@@ -54,6 +54,7 @@ struct Layout {
     compression: usize,
     portrait: usize,
     template: usize,
+    birth_date: usize,
     flag: usize,
     army: usize,
     horse: usize,
@@ -68,6 +69,7 @@ const LAYOUTS: [Layout; 2] = [
         compression: 60844,
         portrait: 2404828,
         template: 2404895,
+        birth_date: 2404876,
         flag: 357277,
         army: 355299,
         horse: 5279514,
@@ -81,6 +83,7 @@ const LAYOUTS: [Layout; 2] = [
         compression: 60845,
         portrait: 2404565,
         template: 2404632,
+        birth_date: 2404613,
         flag: 357196,
         army: 355220,
         horse: 5279255,
@@ -576,6 +579,13 @@ pub fn customize(
             && world_strings[&uint(&world, layout.template + 1)?] == leader,
         "Could not locate the campaign founder"
     );
+    let birth = &mut world[layout.birth_date..layout.birth_date + 9];
+    ensure!(
+        birth == [0x82, 0x04, 0x06, 0x16, 173, 0x16, 4, 0x16, 3],
+        "Could not locate the founder's date of birth"
+    );
+    // Match the opening season and day so the chosen age is reached on turn one.
+    birth[4] = 190 - config.founder_age;
     for table in [&mut strings, &mut world_strings] {
         for name in table.values_mut() {
             if name.contains(BASE_KEY) {
@@ -668,12 +678,19 @@ pub fn customize(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{caab::Document, config::CAMPAIGN, game};
+    use crate::{
+        caab::Document,
+        config::{CAMPAIGN, MAX_FOUNDER_AGE},
+        game,
+    };
 
     #[test]
-    fn female_founder_uses_female_art_in_both_campaign_modes() -> Result<()> {
+    fn founder_keeps_custom_age_and_female_art_in_both_campaign_modes() -> Result<()> {
         let pack = game::template()?;
-        let config = Config::default();
+        let config = Config {
+            founder_age: MAX_FOUNDER_AGE,
+            ..Config::default()
+        };
         let key = config.key();
         let art = FounderArt {
             key: "3k_main_art_set_historical_zheng_jiang_general".into(),
@@ -688,6 +705,12 @@ mod tests {
             let (outer, _, _) = split(&generated)?;
             let world = Document::read(&open_world(&outer, mode.compression_marker())?)?;
             let founder = world.record("PERSISTENT_CHARACTER", 10, &format!("{key}_leader"))?;
+            let birth = &founder.fields()[7];
+            assert_eq!(world.name(birth), "DATE");
+            assert_eq!(
+                world.id(&birth.fields()[0])?,
+                190 - u32::from(MAX_FOUNDER_AGE)
+            );
             let appearance = world.one(founder, "CHARACTER_ART_SET_INFO")?.fields();
             assert_eq!(world.raw(&appearance[5]), [0x13]);
             assert_eq!(world.text(&appearance[6]), Some(art.key.as_str()));

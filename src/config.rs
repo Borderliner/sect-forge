@@ -8,6 +8,8 @@ use unicode_normalization::UnicodeNormalization;
 
 pub const BASE_KEY: &str = "sects_white_lotus";
 pub const BASE_ART: &str = "3k_main_art_set_generic_male_48_general_wood";
+pub const MIN_FOUNDER_AGE: u8 = 18;
+pub const MAX_FOUNDER_AGE: u8 = 60;
 pub const HEPU: &str = "3k_main_hepu_capital";
 pub const HAN: &str = "3k_main_faction_han_empire";
 pub const CAMPAIGN: &str = "3k_main_campaign_map";
@@ -56,6 +58,8 @@ pub struct Config {
     pub sect_name: String,
     pub forename: String,
     pub surname: String,
+    #[serde(default = "default_founder_age")]
+    pub founder_age: u8,
     pub primary_colour: String,
     pub secondary_colour: String,
     #[serde(default)]
@@ -80,6 +84,10 @@ pub struct Config {
     pub variant: Variant,
 }
 
+fn default_founder_age() -> u8 {
+    MIN_FOUNDER_AGE
+}
+
 fn default_subtype() -> String {
     CLASSES[0].0.into()
 }
@@ -96,6 +104,7 @@ impl Default for Config {
             sect_name: "White Lotus".into(),
             forename: "Lian".into(),
             surname: "Shen".into(),
+            founder_age: default_founder_age(),
             primary_colour: "A34434".into(),
             secondary_colour: "D3AD6C".into(),
             faction_key: None,
@@ -167,6 +176,10 @@ impl Config {
     }
 
     pub fn validated(mut self) -> Result<Self> {
+        ensure!(
+            (MIN_FOUNDER_AGE..=MAX_FOUNDER_AGE).contains(&self.founder_age),
+            "Founder age must be between {MIN_FOUNDER_AGE} and {MAX_FOUNDER_AGE}."
+        );
         for (label, value) in [
             ("Faction name", &mut self.sect_name),
             ("Given name", &mut self.forename),

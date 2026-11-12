@@ -34,7 +34,8 @@
 
 | Editor | What you can customize |
 | --- | --- |
-| **Founder** | Five classes with their own skills, bodyguards, and starting gear. Playable male and female portraits from the game or supported Workshop packs. |
+| **Identity** | Choose both faction colours from clickable swatches or enter their hex codes. |
+| **Founder** | Set a starting age from 18 to 60 and choose from five classes with their own skills, bodyguards, and starting gear. Playable male and female portraits from the game or supported Workshop packs. |
 | **Traits** | Browse 84 traits with their icons, gameplay effects, and scopes. Switch between List and Grid and filter by element, Good, or Bad. Choose up to three starting traits, including one physical trait. |
 | **Equipment** | Fill the weapon, armour, mount, accessory, and follower slots. Search by name and filter by Common, Refined, Exceptional, or Unique. |
 | **Settlement** | Start at Hepu, one of 23 unoccupied sites, or one of 64 Han Empire settlements. The map displays faction colours and portraits for 24 vanilla warlords. |
@@ -96,6 +97,7 @@ Use `--game` to specify the installation and `--output` to choose an export fold
 | `variant` | `"sect"` or `"cult"`. Defaults to `"sect"`. |
 | `sectMode` | `true` for the one-commandery rules. Defaults to `true`. |
 | `tromCompat` | `true` to build against TROM 5.2. |
+| `founderAge` | Starting age in years, from 18 to 60. Defaults to 18 when omitted. |
 | `artSet`, `portraitPack` | Portrait key and optional source pack path. |
 | `subtype`, `startRegion` | Class and supported starting region keys, such as `3k_general_metal` and `3k_main_yizhou_island_capital`. |
 | `startingTraits` | Array of trait keys, such as `3k_main_ceo_trait_personality_brave`. |
