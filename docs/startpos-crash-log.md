@@ -32,9 +32,8 @@ names through `names_name_<id>`.
 - The AK has no `raw_data/text` folder, so Bob cannot build localisation for new keys.
 - A faction with no region and no character is never named, which is why those builds passed.
 
-`tools/MakeLocPack.ps1` builds a loc-only pack with those keys and installs it into the game's
-`data/` folder as a **Movie** pack (`data/sects_white_lotus_loc.pack`), which the game loads even
-during startpos generation. The same loc rows must ship inside the final mod pack.
+During the Assembly Kit investigation, a loc-only Movie pack made these keys available during
+startpos generation. [The Rust exporter](../src/export.rs) writes these rows into the final mod pack.
 
 ## Narrowed to one thing
 
@@ -58,10 +57,9 @@ unless our DB tables are present as a loaded pack. Consequences:
 - A row for a *vanilla* faction that is absent from the 190 campaign (`3k_dlc04_faction_bian_zhang`)
   builds fine, which proves the key lookup is the failing step.
 
-Fix: `tools/MakeSupportPack.ps1` copies every DB table our faction touches (plus its loc) out of the
-Assembly Kit into a pack, saves it as a **Movie** pack and installs it to
-`data/sects_white_lotus_support.pack`, so the game always loads the new faction during the build.
-The same pack is the data part of the final mod.
+An Assembly Kit support pack supplied the faction tables and localisation to the game during
+startpos generation. The current exporter uses the [compiled Hepu template](../src/data/hepu-template.pack)
+and writes its own faction tables and localisation.
 
 ## The two real blockers
 
@@ -86,9 +84,6 @@ replaced anywhere - the slot was never used. The sect then gets:
 - a starting city,
 - the standard frontend campaign-selection chain so it is selectable and playable.
 
-Tools: `tools/AddFrontendData.ps1` builds the frontend chain; `tools/StartposGen.ps1 -SkipFactionRow`
-reuses the slot's existing startpos row instead of adding one.
-
 ## Ruled out
 
 - Missing DB link rows: cloned all 10 tables that reference a faction key
@@ -107,8 +102,7 @@ reuses the slot's existing startpos row instead of adding one.
 
 ## Key mechanics learned
 
-- The AK startpos XMLs are UTF-8 **without BOM**; read/write them with explicit UTF-8 and no BOM
-  (`tools/StartposGen.ps1` now does this).
+- The AK startpos XMLs use UTF-8 without a BOM.
 - 62 factions own regions and *all* of them have a `faction_leader` character; 208 factions have
   neither regions nor characters (dormant).
 - Every "real" faction has a `_separatists` twin row in `factions` and a `faction_civil_war_setups`
@@ -120,14 +114,17 @@ reuses the slot's existing startpos row instead of adding one.
   The template donor is now chosen among `unique=0` templates that are **already used in
   `start_pos_characters`**, with a matching subtype.
 
-## Tooling written for this
+## TROM 5.2, 190 CE
 
-- `tools/BobBuild.ps1` - opens Bob, clicks Select all + Start through UI Automation, waits, reports.
-- `tools/StartposGen.ps1` - writes faction / leader / retinue / region / settlement rows
-  (switches: `-SkipLeader`, `-SkipRetinue`, `-SkipRegion`, `-SkipSettlement`, `-Playable`,
-  `-CeoInitialData`, `-LeaderTemplate`).
-- `tools/ActivateFactionTest.ps1` - control: give a dormant vanilla faction a city and an officer.
-- `tools/CtrlCharTest.ps1` - control: add a cloned officer to an existing faction (pool/map/leader).
-- `tools/CloneFactionLinks.ps1` - clones every DB row that references a donor faction key.
-- `tools/AddSeparatorTwin.ps1` - creates `<faction>_separatists`, its link rows, the civil-war
-  setup and the separatist `start_pos_factions` row.
+TROM Part 1 supplies both compiled 190 CE start positions. Part 2 supplies assets.
+[The Rust merger](../src/trom.rs) uses the installed Part 1 files as the campaign base, reuses
+the dormant Wuwei slot and adds the founder, army and equipment records. The game
+loads the faction roster before it loads the campaign world, so a working roster
+alone can still lead to a crash.
+
+Giving the slot a capital requires removing the extra string stored after the
+two empty capital references. The founder also needs TROM's faction-leader post
+ID and a matching member in the campaign family tree. Without the family-tree
+entry, the game crashes while calculating campaign statistics before the first
+Lua tick. The merger checks the two TROM start position hashes before applying
+these layout-specific edits.

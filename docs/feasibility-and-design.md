@@ -1,7 +1,15 @@
 # Sects & Cults — Feasibility & Technical Design
 
-Total War: Three Kingdoms. Target: campaign 190 (`3k_main`) first, DLC maps later.
-Tooling: Assembly Kit + RPFM (`C:\Users\Touraj\Apps\RPFM`) + Script Extender 0.46.0.
+These notes record early campaign modding research for Total War: Three Kingdoms. See the
+[Sect Forge README](../README.md) for the current editor.
+
+### Sect Forge distribution
+
+The Rust desktop and CLI call `rpfm_lib` in-process for pack and database I/O. Both bundle
+the Three Kingdoms schema subset and the campaign template. They discover the game and Workshop
+packs in the user's Steam libraries. The Assembly Kit and Script Extender details below describe
+the original research environment.
+[RPFM libraries](https://frodo45127.github.io/rpfm/) · [RPFM schemas](https://github.com/Frodo45127/rpfm-schemas)
 
 Everything below was verified against the local install, not recalled from memory. Paths are
 included so each claim can be re-checked.
@@ -204,8 +212,9 @@ so adding the 4th/10th sect is cheap. A generic "Sect" faction is still useful a
 
 ### Status
 
-M0 is built and validated (see `README.md`): effect bundle, bandit-slot hideout chain with three
-levels, loc, and a Lua smoke script. Pack: `build/SectsCults_M0.pack`.
+The original prototype validated a three-level hideout chain in bandit resource slots and
+an effect bundle with localised text. The current generator implements the Sect doctrine
+and Cult Bandit Network campaigns described in the [README](../README.md).
 
 ### Hideout lifecycle (v1)
 

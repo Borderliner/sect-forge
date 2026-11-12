@@ -1,0 +1,2 @@
+#!/bin/sh
+exec pwsh -NoProfile -File tools/version.ps1 -CommitHook

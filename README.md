@@ -1,121 +1,129 @@
-# Sects & Cults — Total War: Three Kingdoms mod
+<p align="center">
+  <img src="src/data/sect-forge.png" alt="Sect Forge lotus emblem" width="88">
+</p>
 
-## Sect Forge
+<h1 align="center">Sect Forge</h1>
 
-Open `SectForge.bat`. Enter your faction and leader names, choose two colours, and select an existing portrait. **Browse mod…** opens the compatible portraits from an installed `.pack`. A pack built with a mod portrait depends on that source pack, which must stay available to the game.
+<p align="center"><strong>Create a playable faction for Total War: THREE KINGDOMS.</strong></p>
 
-**Build mod pack** exports `sects_<name>.pack` to `%LOCALAPPDATA%\SectForge\mods`. Click **Open output folder**, import the pack into your mod manager, and enable it before starting a new 190 CE campaign in Romance or Records. Use the exported folder or your mod manager's library when loading the pack. Launching directly with a working directory under `Sects&Cults` caused a startup crash during testing.
+<p align="center">
+  Windows desktop editor &nbsp;·&nbsp; 190 CE &nbsp;·&nbsp; Romance and Records &nbsp;·&nbsp; Vanilla and TROM 5.2
+</p>
 
-This scenario adds a distinct faction and custom leader at Hepu. It uses a male Champion (Wood) leader and supports one generated faction pack at a time. The scenario supplies the flag artwork and campaign selection blurb. Campaign overhauls that supply their own 190 start positions conflict with the generated scenario. Close the game before rebuilding an existing pack.
+<p align="center">
+  <a href="#quick-start">Quick start</a> &nbsp;·&nbsp;
+  <a href="#play-a-sect-or-cult">Campaigns</a> &nbsp;·&nbsp;
+  <a href="#build-from-source">Build from source</a> &nbsp;·&nbsp;
+  <a href="#versioning">Versioning</a>
+</p>
 
-The editor requires Windows, Python 3.10 or newer with Tkinter, and an RPFM Server with Three Kingdoms configured. It looks for `rpfm_server.exe` on `PATH` and in `%USERPROFILE%\Apps\RPFM`. Set `SECTFORGE_RPFM` to use a different executable. The builder uses `build/SectsCults_white_lotus.pack` as its input scenario.
+<table align="center">
+  <tr>
+    <td align="center"><strong>88</strong><br>Starting settlements</td>
+    <td align="center"><strong>84</strong><br>Founder traits</td>
+    <td align="center"><strong>2</strong><br>Campaign variants</td>
+  </tr>
+</table>
 
-For command-line builds:
+## Quick start
+
+1. **Set your identity.** Launch `sect-forge.exe`. Sect Forge finds your Steam installation and Workshop packs. Use **Game folder…** to point it at another installation. Name your faction, choose its colours, and select **Sect** or **Cult**.
+2. **Create a founder.** Pick a class, choose a vanilla or Workshop portrait, and set your starting traits and equipment. Each name has a **Reroll** button. The chosen portrait determines the given-name pool and titles like *Brotherhood* or *Sisterhood*.
+3. **Pick a settlement.** Choose a marker on the 190 CE map or search by name, owner, or settlement type. The map shows each available start alongside the vanilla warlords.
+4. **Export the pack.** Open **Review & export**, check the filename and campaign rules, and click **Export mod pack**. The default folder is `%LOCALAPPDATA%\SectForge\mods`. Enable the exported pack in your mod manager and start a fresh 190 CE campaign. **Save project…** stores your editable choices as JSON.
+
+| Editor | What you can customize |
+| --- | --- |
+| **Founder** | Five classes with their own skills, bodyguards, and starting gear. Playable male and female portraits from the game or supported Workshop packs. |
+| **Traits** | Browse 84 traits with their icons, gameplay effects, and scopes. Switch between List and Grid and filter by element, Good, or Bad. Choose up to three starting traits, including one physical trait. |
+| **Equipment** | Fill the weapon, armour, mount, accessory, and follower slots. Search by name and filter by Common, Refined, Exceptional, or Unique. |
+| **Settlement** | Start at Hepu, one of 23 unoccupied sites, or one of 64 Han Empire settlements. The map displays faction colours and portraits for 24 vanilla warlords. |
+
+Workshop packs can be found by filename or ID, or opened directly from disk. Complete image-only portraits can use their original artwork and unit card with a vanilla female 3D model. Exports that use Workshop artwork list the source pack as a dependency.
+
+## Play a Sect or Cult
+
+| **Sect** | **Cult** |
+| --- | --- |
+| Grow Influence through doctrines and chapters. Collect donations, fund congregations, and send war chests to your patron. | Expand the Bandit Network, unlock capped recruits, and take timed raid contracts. |
+| **24 reforms** across community, defence, and patronage. | **24 additional reforms** across raiding, recruitment, and stronghold development. |
+| **Victory** when your chosen patron claims an imperial throne. | **Victory** after using **Sack and Withdraw** in 30 distinct commandery cities. |
+
+For a **Sect**, choose a patron through a standalone **Make regular payments** deal. Household assemblies can fund up to five chapters. The highest reached Influence threshold of 25, 75, or 150 grants +10%, +25%, or +50% background income.
+
+For a **Cult**, Market Fences can offer a contract after your first sack. Sack a new commandery seat within five turns to earn its payout. Your armies lose campaign movement while the contract is open.
+
+### Sect Mode
+
+Sect Mode is on by default for both variants. You can hold every settlement in one commandery. Acquiring territory in another moves your base and leaves your old holdings as ruins. **Supply Contracts** or **Smuggler Contracts** unlock upgrades that bypass material requirements for a higher construction cost while keeping settlement and slot requirements.
+
+Turn Sect Mode off for unrestricted expansion and normal building resource requirements. Both settings use reforms to unlock advanced buildings and recruits. In TROM, a Sect using Sect Mode can research alternate access to selected standard elite units while keeping their class and skill requirements.
+
+### TROM 5.2
+
+Install both TROM Workshop parts and select **TROM compatibility · 5.2** in **Review & export**. Enable the generated `!sects_<name>_trom.pack` above both parts in your mod manager. Sect Forge reads TROM Part 1 and checks its 190 CE start positions for both campaign modes.
+
+Enable one generated faction pack at a time. Other mods that replace the same campaign start or research screen can conflict. Close the game before overwriting an existing pack.
+
+## Build from source
+
+Sect Forge is a native Windows app built with Rust and GPUI. Its embedded `rpfm_lib` writer works directly with your local Three Kingdoms installation and the bundled scenario and database definitions.
+
+1. Install the stable Rust MSVC toolchain.
+2. In Visual Studio Build Tools, select **Desktop development with C++**, the **MSVC x64/x86 build tools**, and a **Windows 10 or 11 SDK**.
+3. Open **x64 Native Tools Command Prompt for VS** and run the following from the repository directory.
+
+```bat
+cargo build --locked --release --bins
+.\target\release\sect-forge.exe
+```
+
+If `link.exe` is missing, reopen the x64 developer prompt after installing the MSVC tools. For a missing `kernel32.lib`, check that the Windows SDK is installed and that `LIB` includes its `Lib\<version>\um\x64` directory. [Microsoft C++ command-line setup](https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line)
+
+<details>
+<summary><strong>Command-line exports</strong></summary>
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\BuildSect.ps1 -ConfigPath configs\white_lotus.json
+.\target\release\sect-forge-cli.exe build configs\jade_crane_society.json
 ```
 
-The CLI also accepts `portraitPack` with a path to the source `.pack`, and `artSet` with the corresponding art-set key. The Hepu scenario supplies the start position, IDs and gameplay template. Existing config fields for start coordinates, city, numeric IDs and voice have no effect on this build path.
+Use `--game` to specify the installation and `--output` to choose an export folder. Run `traits` or `portraits --pack <file>` to look up trait and portrait keys.
 
-## Original Sects & Cults prototype
+| JSON field | Value |
+| --- | --- |
+| `variant` | `"sect"` or `"cult"`. Defaults to `"sect"`. |
+| `sectMode` | `true` for the one-commandery rules. Defaults to `true`. |
+| `tromCompat` | `true` to build against TROM 5.2. |
+| `artSet`, `portraitPack` | Portrait key and optional source pack path. |
+| `subtype`, `startRegion` | Class and supported starting region keys, such as `3k_general_metal` and `3k_main_yizhou_island_capital`. |
+| `startingTraits` | Array of trait keys, such as `3k_main_ceo_trait_personality_brave`. |
+| `startingAncillaries` | Map of slot to item key. See the [starting equipment catalog](src/starting_ancillaries.json). |
 
-Custom sects/cults that live in hideouts, follow their own belief trees and act as bandits,
-preachers, assassins or mercenaries.
+The equipment map accepts `weapon`, `armour`, `mount`, `accessory`, and `follower`. Older projects can use `extra` for one accessory or follower. The Hepu scenario supplies campaign IDs and the base faction data.
 
-- **Feasibility + architecture:** [`docs/feasibility-and-design.md`](docs/feasibility-and-design.md)
-- **Status:** M0 (smoke test) builds and validates.
+</details>
 
-## Layout
+## Versioning
 
-```
-docs/feasibility-and-design.md   what the game supports, why, and the plan
-src/script/sects_m0.lua          campaign Lua (source of truth)
-src/tests/sects_m0_test.lua      RPFM Lua test (kept outside script/ so the game ignores it)
-src/tsv/*.tsv                    the pack's tables exported as RPFM TSVs (reference)
-tools/rpfm_mcp.ps1               minimal MCP client for rpfm_server
-tools/build_m0.ps1               rebuilds build/SectsCults_M0.pack from scratch
-build/SectsCults_M0.pack         the built mod
-```
-
-## Prerequisites
-
-- Total War: Three Kingdoms + Assembly Kit (installed)
-- RPFM 5.x at `C:\Users\Touraj\Apps\RPFM` (3K schema downloaded)
-- Script Extender 0.46.0 registered through TK Mod Manager (game-side testing)
-- PowerShell 5.1
-
-## Build
+The package version in [Cargo.toml](Cargo.toml#L3) drives the app footer and both executables’ `--version` output. Enable the Git hook once per clone with Git for Windows and PowerShell 7 on your PATH.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_m0.ps1
+git config --local core.hooksPath .githooks
 ```
 
-The script starts `rpfm_server.exe` if needed, talks to it over MCP
-(`http://127.0.0.1:45127/mcp`), creates the pack, adds rows, saves and runs diagnostics.
+The hook stages a **patch** bump on each commit by default and updates the app entry in `Cargo.lock`. For a compatible feature or a breaking change, choose a **minor** or **major** bump before committing. The hook uses the version you already staged. [Semantic Versioning](https://semver.org/) · [Git hooks](https://git-scm.com/docs/githooks)
 
-Expected diagnostics output once the Assembly Kit-backed dependency cache exists:
-
-```
-diagnostics: {"by_level":{"info":2},"by_type":{"NoReferenceTableNorColumnFoundPak":2},"total":2}
+```powershell
+pwsh -File tools/version.ps1 minor  # Compatible feature
+pwsh -File tools/version.ps1 major  # Breaking change
 ```
 
-The two `info` entries are `commodity` and `resource_requirement` on `building_levels`: RPFM's
-schema has no reference column for them. They are tool schema gaps, not data errors.
-**There are no warnings and no errors.**
+<details>
+<summary><strong>Source and credits</strong></summary>
 
-If the cache has not been regenerated since installing the Assembly Kit, the same run shows four
-`NoPak` warnings for references into AK tables (`commodity`, `resource_requirement`,
-`bundle_target`, `icon_supplement_colour_type`). Run `Game Selected -> Generate Dependencies
-Cache` once in RPFM to clear them; that is what this project did.
+- `src/desktop.rs` and `src/desktop/` implement the editor. `src/main.rs` implements the CLI.
+- `src/export.rs`, `src/startpos.rs`, and `src/trom.rs` write the pack and its campaign starts.
+- `src/doctrines.rs`, `src/unlocks.rs`, and `src/script/` implement campaign progression.
+- The bundled database definitions are from [RPFM Schemas](https://github.com/Frodo45127/rpfm-schemas) under the [MIT license](src/data/rpfm-schemas.LICENSE).
 
-## What M0 contains
-
-| Pack path | Rows |
-|---|---|
-| `db/effect_bundles_tables/sects_cults` | `sects_m0_bundle` (faction target, positive) |
-| `db/effect_bundles_to_effects_junctions_tables/sects_cults` | bundle -> background income effect |
-| `db/building_chains_tables/sects_cults` | `sects_hideout` in the bandit superchain |
-| `db/building_levels_tables/sects_cults` | `sects_hideout_1..3` (copied from a vanilla bandit level) |
-| `db/building_chain_availability_sets_tables/sects_cults` | `sects_hideout` in `3k_main`, `3k_dlc06_nanman`, `ep_default`, `3k_dlc05_bandit`, `3k_dlc05_bandit_white_tiger_yan` |
-| `db/building_set_to_building_junctions_tables/sects_cults` | `sects_hideout` in `3k_main_building_set_all` and `3k_dlc05_bandit_resource_buildings` |
-| `text/db/sects_cults.loc` | names/descriptions for the bundle and the chain |
-| `script/campaign/mod/sects_m0.lua` | logs SE status and applies the bundle for 3 turns |
-
-The chain is hooked into `3k_resource_bandit_buildings`, the superchain mapped to the
-`3k_resource_bandit` slot template, which is the same route vanilla bandit buildings use.
-
-## In-game test (M0)
-
-1. Copy `build\SectsCults_M0.pack` into
-   `C:\Program Files (x86)\Steam\steamapps\common\Total War THREE KINGDOMS\data\`
-   (or your TKMM mods folder) and enable it.
-2. Start a **new** campaign (any faction; the hideout is now in the wide availability sets).
-3. Open a **resource (secondary) slot**, not the province capital's main slot. `3k_resource_bandit`
-   is the slot template used by roughly 600 resource slots across the map. **Sect Hideout** should
-   be listed at 500 gold.
-4. Check `lua_mod_log.txt` in the game root for:
-
-   ```
-   [sects] file executing
-   [sects] first-tick callback registered=true
-   [sects] M0 loaded - state=ready version=...
-   [sects] applied sects_m0_bundle for 3 turns
-   ```
-
-If the building does not appear, check, in order: the availability set (`3k_dlc05_bandit`), the
-superchain (`3k_resource_bandit_buildings`), and whether that faction's subculture can own the
-slot type at all.
-
-## Editing the data
-
-- **Quick iteration:** open `build\SectsCults_M0.pack` in RPFM, edit the tables in the grid, save.
-- **Reproducible:** change the values in `tools/build_m0.ps1` (source of truth) and rebuild.
-  `src/tsv/*.tsv` are exports for reference and spreadsheet work; the build script does not read
-  them.
-
-## Next milestone (M1)
-
-Hideout lifecycle: 3-turn concealment, reveal on timeout or detection, `se_slot_construct` /
-`se_slot_destroy` so Lua can plant and remove hideouts, and state persisted with
-`cm:save_named_value`. See the design doc, section 4.
+</details>

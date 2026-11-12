@@ -1,0 +1,8 @@
+#!/bin/sh
+# A path-only commit uses a temporary index for pre-commit. Bring the
+# normal index forward if its Cargo files still match the previous commit.
+git diff --cached --quiet HEAD -- Cargo.toml Cargo.lock && exit 0
+previous=$(git rev-parse --verify 'HEAD@{1}' 2>/dev/null) || exit 0
+git diff --cached --quiet "$previous" -- Cargo.toml Cargo.lock || exit 0
+git diff --quiet HEAD -- Cargo.toml Cargo.lock || exit 0
+git restore --staged --source=HEAD -- Cargo.toml Cargo.lock

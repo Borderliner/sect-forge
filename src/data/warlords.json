@@ -1,0 +1,194 @@
+[
+  {
+    "name": "Prince Liu Chong",
+    "x": 465,
+    "y": 458,
+    "primary": "#F08F10",
+    "secondary": "#DEA442",
+    "portrait": "mh_hero_special_earth_liu_chong"
+  },
+  {
+    "name": "Yan Baihu",
+    "x": 595,
+    "y": 338,
+    "primary": "#947EA5",
+    "secondary": "#CDBDBD",
+    "portrait": "lb_main_hero_special_metal_white_tiger_yan"
+  },
+  {
+    "name": "Meng Huo",
+    "x": 176,
+    "y": 279,
+    "primary": "#BB8620",
+    "secondary": "#980505",
+    "portrait": "3k_dlc06_hero_special_meng_huo"
+  },
+  {
+    "name": "King Mulu",
+    "x": 207,
+    "y": 209,
+    "primary": "#5E6289",
+    "secondary": "#C8C8C8",
+    "portrait": "3k_dlc06_hero_special_king_mulu"
+  },
+  {
+    "name": "King Shamoke",
+    "x": 319,
+    "y": 318,
+    "primary": "#635079",
+    "secondary": "#A0A0A0",
+    "portrait": "3k_dlc06_hero_special_king_shamoke"
+  },
+  {
+    "name": "Lady Zhurong",
+    "x": 109,
+    "y": 265,
+    "primary": "#A45114",
+    "secondary": "#C69C30",
+    "portrait": "3k_dlc06_hero_special_lady_zhurong"
+  },
+  {
+    "name": "Cao Cao",
+    "x": 504,
+    "y": 445,
+    "primary": "#303B75",
+    "secondary": "#CDBDBD",
+    "portrait": "3k_main_hero_special_earth_cao_cao"
+  },
+  {
+    "name": "Dong Zhuo",
+    "x": 309,
+    "y": 475,
+    "primary": "#272021",
+    "secondary": "#A60D0D",
+    "portrait": "3k_main_hero_special_fire_dong_zhuo"
+  },
+  {
+    "name": "Gongsun Zan",
+    "x": 553,
+    "y": 606,
+    "primary": "#F1E1E1",
+    "secondary": "#323232",
+    "portrait": "3k_main_hero_special_fire_gongsun_zan"
+  },
+  {
+    "name": "Kong Rong",
+    "x": 584,
+    "y": 526,
+    "primary": "#3149A7",
+    "secondary": "#967832",
+    "portrait": "3k_main_hero_special_water_kong_rong"
+  },
+  {
+    "name": "Liu Bei",
+    "x": 542,
+    "y": 504,
+    "primary": "#619F4C",
+    "secondary": "#323232",
+    "portrait": "3k_main_hero_special_earth_liu_bei"
+  },
+  {
+    "name": "Liu Biao",
+    "x": 389,
+    "y": 401,
+    "primary": "#3FBABC",
+    "secondary": "#EAD360",
+    "portrait": "3k_main_hero_special_earth_liu_biao"
+  },
+  {
+    "name": "Liu Yan",
+    "x": 173,
+    "y": 379,
+    "primary": "#CD974E",
+    "secondary": "#967832",
+    "portrait": "3k_dlc07_hero_special_water_liu_yan"
+  },
+  {
+    "name": "Ma Teng",
+    "x": 238,
+    "y": 481,
+    "primary": "#C06B75",
+    "secondary": "#EAD360",
+    "portrait": "3k_main_hero_special_fire_ma_teng"
+  },
+  {
+    "name": "Shi Xie",
+    "x": 316,
+    "y": 157,
+    "primary": "#5195BB",
+    "secondary": "#AEA2DC",
+    "portrait": "3k_dlc06_hero_special_water_shi_xie"
+  },
+  {
+    "name": "Sun Jian",
+    "x": 401,
+    "y": 359,
+    "primary": "#C5312D",
+    "secondary": "#D7C8B0",
+    "portrait": "3k_main_hero_special_metal_sun_jian"
+  },
+  {
+    "name": "Tao Qian",
+    "x": 551,
+    "y": 469,
+    "primary": "#2B3A6C",
+    "secondary": "#967832",
+    "portrait": "3k_main_hero_special_water_tao_qian"
+  },
+  {
+    "name": "Gong Du",
+    "x": 229,
+    "y": 460,
+    "primary": "#C9893D",
+    "secondary": "#000000",
+    "portrait": "3k_ytr_hero_special_veteran_gong_du"
+  },
+  {
+    "name": "He Yi",
+    "x": 472,
+    "y": 404,
+    "primary": "#E4C155",
+    "secondary": "#AEA2DC",
+    "portrait": "3k_ytr_hero_special_healer_he_yi"
+  },
+  {
+    "name": "Huang Shao",
+    "x": 530,
+    "y": 526,
+    "primary": "#3F313F",
+    "secondary": "#000000",
+    "portrait": "3k_ytr_hero_special_scholar_huang_shao"
+  },
+  {
+    "name": "Yuan Shao",
+    "x": 473,
+    "y": 521,
+    "primary": "#8A633C",
+    "secondary": "#C9B9A2",
+    "portrait": "3k_main_hero_special_earth_yuan_shao"
+  },
+  {
+    "name": "Yuan Shu",
+    "x": 416,
+    "y": 435,
+    "primary": "#D05939",
+    "secondary": "#DCA078",
+    "portrait": "3k_main_hero_special_earth_yuan_shu"
+  },
+  {
+    "name": "Zhang Yan",
+    "x": 430,
+    "y": 589,
+    "primary": "#2A714C",
+    "secondary": "#AEA2DC",
+    "portrait": "3k_main_hero_special_wood_zhang_yan"
+  },
+  {
+    "name": "Zheng Jiang",
+    "x": 385,
+    "y": 543,
+    "primary": "#238E1C",
+    "secondary": "#DBDBDB",
+    "portrait": "3k_main_hero_special_wood_zheng_jiang"
+  }
+]

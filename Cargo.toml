@@ -1,0 +1,55 @@
+[package]
+name = "sect-forge"
+version = "0.7.5"
+edition = "2024"
+default-run = "sect-forge"
+
+[[bin]]
+name = "sect-forge"
+path = "src/bin/sect-forge.rs"
+required-features = ["desktop"]
+
+[[bin]]
+name = "sect-forge-cli"
+path = "src/main.rs"
+
+[features]
+default = ["desktop"]
+desktop = ["dep:async-channel", "dep:fastrand", "dep:gpui", "dep:gpui-component", "dep:image"]
+
+[dependencies]
+anyhow = "1"
+async-channel = { version = "2", optional = true }
+clap = { version = "4", features = ["derive"] }
+fastrand = { version = "2", optional = true }
+gpui = { version = "=0.2.2", optional = true, default-features = false }
+gpui-component = { version = "=0.5.1", optional = true }
+hex = "0.4"
+image = { version = "0.25", default-features = false, optional = true }
+indexmap = "2"
+liblzma-sys = { version = "=0.4.9", features = ["static"] }
+png = "0.18"
+regex = "1"
+ron = "0.8"
+rpfm_lib = { version = "=5.3.3", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+steamlocate = "2.1"
+tempfile = "3"
+unicode-normalization = "0.1"
+uuid = { version = "1", features = ["v5"] }
+xmltree = "0.11"
+
+[build-dependencies]
+embed-resource = "=3.0.12"
+
+[profile.dev]
+debug = 0
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 0
+
+[profile.dev.package.liblzma-sys]
+opt-level = 3
