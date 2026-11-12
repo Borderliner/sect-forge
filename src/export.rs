@@ -747,6 +747,11 @@ fn variant(
 }
 
 fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
+    add(
+        pack,
+        &format!("script/campaign/three_kingdoms_early/factions/{key}/{key}_start.lua"),
+        b"-- Campaign initialization is registered by the Sect Forge campaign rules.\n",
+    )?;
     let site = config.settlement().unwrap();
     let traits = config
         .starting_traits

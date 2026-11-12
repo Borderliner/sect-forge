@@ -9,7 +9,8 @@ use liblzma_sys::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    config::{BASE_ART, BASE_KEY, CLASSES, Config},
+    caab::{Document, Edit},
+    config::{BASE_ART, BASE_KEY, CLASSES, Config, HEPU, Settlement},
     portraits::FounderArt,
 };
 
@@ -20,6 +21,32 @@ const DICTIONARY: u32 = 262_144;
 // an optional end marker. The raw bindings do not expose these two C macros.
 const LZMA_FILTER_LZMA1EXT: u64 = 0x4000_0000_0000_0002;
 const LZMA1EXT_ALLOW_END_MARKER: u32 = 1;
+
+pub(crate) fn map_position(site: &Settlement) -> (f32, f32) {
+    // The frontend stores normalized hex coordinates. Odd columns are staggered.
+    let x = f32::from(site.x) / 891.0;
+    let y = (f32::from(site.y) + f32::from(site.x % 2) * 0.5) / 702.5;
+    (x, y)
+}
+
+fn place_frontend_marker(bytes: Vec<u8>, key: &str, site: &Settlement) -> Result<Vec<u8>> {
+    if site.key == HEPU {
+        return Ok(bytes);
+    }
+    let document = Document::read(&bytes)?;
+    let marker = &document.group("FACTION_INFOS", 0, key)?[11];
+    let mut replacement = document.raw(marker).to_vec();
+    ensure!(
+        replacement.len() == 10 && replacement.starts_with(&[0x4c, 8]),
+        "Unexpected starting position marker for {key}"
+    );
+    let (x, y) = map_position(site);
+    replacement[2..6].copy_from_slice(&x.to_le_bytes());
+    replacement[6..10].copy_from_slice(&y.to_le_bytes());
+    let mut edit = Edit::new(&document);
+    edit.replace(marker, replacement);
+    edit.finish()
+}
 
 #[derive(Clone, Copy)]
 pub enum Mode {
@@ -42,10 +69,6 @@ impl Mode {
             Self::Historical => 0,
             Self::Romance => 1,
         }
-    }
-
-    pub fn compression_marker(self) -> usize {
-        LAYOUTS[self.index()].compression
     }
 }
 
@@ -666,12 +689,17 @@ pub fn customize(
         }
         world.splice(array + 2..array + 4, entry);
     }
-    close_world(
+    let bytes = close_world(
         outer,
         &names,
         &strings,
         layout.compression,
         &join(world, &world_names, &world_strings)?,
+    )?;
+    place_frontend_marker(
+        bytes,
+        key,
+        config.settlement().context("Missing starting settlement")?,
     )
 }
 
@@ -679,16 +707,16 @@ pub fn customize(
 mod tests {
     use super::*;
     use crate::{
-        caab::Document,
         config::{CAMPAIGN, MAX_FOUNDER_AGE},
         game,
     };
 
     #[test]
-    fn founder_keeps_custom_age_and_female_art_in_both_campaign_modes() -> Result<()> {
+    fn founder_keeps_selected_location_age_and_art_in_both_campaign_modes() -> Result<()> {
         let pack = game::template()?;
         let config = Config {
             founder_age: MAX_FOUNDER_AGE,
+            start_region: "3k_main_yizhou_island_capital".into(),
             ..Config::default()
         };
         let key = config.key();
@@ -702,8 +730,13 @@ mod tests {
                 &format!("campaigns/{CAMPAIGN}/startpos_{}.esf", mode.key()),
             )?;
             let generated = customize(&bytes, mode, &config, &key, &art, None, None)?;
+            let frontend = Document::read(&generated)?;
+            let marker = &frontend.group("FACTION_INFOS", 0, &key)?[11];
+            let marker = frontend.raw(marker);
+            assert_eq!(f32::from_le_bytes(marker[2..6].try_into()?), 663.0 / 891.0);
+            assert_eq!(f32::from_le_bytes(marker[6..10].try_into()?), 210.5 / 702.5);
             let (outer, _, _) = split(&generated)?;
-            let world = Document::read(&open_world(&outer, mode.compression_marker())?)?;
+            let world = Document::read(&open_world(&outer, LAYOUTS[mode.index()].compression)?)?;
             let founder = world.record("PERSISTENT_CHARACTER", 10, &format!("{key}_leader"))?;
             let birth = &founder.fields()[7];
             assert_eq!(world.name(birth), "DATE");
@@ -727,7 +760,7 @@ mod tests {
                 &format!("campaigns/{CAMPAIGN}/startpos_{}.esf", mode.key()),
             )?;
             let (outer, _, _) = split(&bytes)?;
-            let world = open_world(&outer, mode.compression_marker())?;
+            let world = open_world(&outer, LAYOUTS[mode.index()].compression)?;
             let (records, names, strings) = split(&world)?;
             assert!(
                 join(records, &names, &strings)? == world,

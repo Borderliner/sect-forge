@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     caab::{Document, Edit, Node, integer, remap},
     config::{Config, HEPU, Settlement},
-    startpos::{Mode, compression_record, open_world},
+    startpos::{Mode, compression_record, map_position, open_world},
 };
 
 mod settlement;
@@ -241,10 +241,9 @@ fn founder(
     if site.key != HEPU {
         let position = donor.one(character, "LOCOMOTABLE")?.fields();
         let mut display = vec![0x0c];
-        let x = (f32::from(site.x) + 0.5) * (2.0 / 3.0);
-        let y = (f32::from(site.y) + 0.5) * (4.0 / (3.0 * 3.0_f32.sqrt()));
-        display.extend(x.to_le_bytes());
-        display.extend(y.to_le_bytes());
+        let (x, y) = map_position(site);
+        display.extend((x * 595.1).to_le_bytes());
+        display.extend((y * 541.7862).to_le_bytes());
         character_changes.insert(position[0].start, display);
         for (field, coordinate) in [(&position[1], site.x), (&position[2], site.y)] {
             let mut bytes = vec![7];
@@ -328,7 +327,10 @@ pub fn merge(
     let world = Document::read(&open_world(&frontend.data, MARKER)?)?;
     let donor = Document::read(&open_world(
         &donor_frontend.data,
-        mode.compression_marker(),
+        donor_frontend
+            .one(&donor_frontend.root, "COMPRESSED_DATA")?
+            .fields()[0]
+            .start,
     )?)?;
     let mut frontend_edit = Edit::new(&frontend);
     let mut edit = Edit::new(&world);
