@@ -35,9 +35,9 @@
 | Editor | What you can customize |
 | --- | --- |
 | **Identity** | Choose both faction colours from clickable swatches or enter their hex codes. |
-| **Founder** | Set a starting age from 18 to 60 and choose from five classes with their own skills, bodyguards, and starting gear. Playable male and female portraits from the game or supported Workshop packs. |
+| **Founder** | Set the founder’s name, class, and starting age (18–60) in **Personal details**. Browse playable male and female artwork in **Portrait**. |
 | **Traits** | Browse 84 traits with their icons, gameplay effects, and scopes. Switch between List and Grid and filter by element, Good, or Bad. Choose up to three starting traits, including one physical trait. |
-| **Equipment** | Fill the weapon, armour, mount, accessory, and follower slots. Search by name and filter by Common, Refined, Exceptional, or Unique. |
+| **Equipment** | Compare combat stats and character bonuses for weapons, armour, mounts, accessories, and followers. Stats reflect TROM when compatibility is enabled and show separate Romance and Records values where they differ. |
 | **Settlement** | Start at Hepu, one of 23 unoccupied sites, or one of 64 Han Empire settlements. The map displays faction colours and portraits for 24 vanilla warlords. |
 
 Workshop packs can be found by filename or ID, or opened directly from disk. Complete image-only portraits can use their original artwork and unit card with a vanilla female 3D model. Exports that use Workshop artwork list the source pack as a dependency.

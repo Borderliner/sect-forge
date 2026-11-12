@@ -22,7 +22,7 @@ use gpui_component::{
     Disableable, Root, Selectable, Sizable, Theme, ThemeMode,
     button::Button,
     color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
-    input::{Input, InputEvent, InputState, NumberInput, NumberInputEvent, StepAction},
+    input::{Input, InputEvent, InputState},
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow},
 };
 use rpfm_lib::files::{Container, pack::Pack};
@@ -33,7 +33,7 @@ use crate::{
         Settlement, Variant, WARLORDS, output_dir,
     },
     export,
-    game::{self, Game, MAP_IMAGE, Trait, TraitCategory},
+    game::{self, EquipmentCatalog, EquipmentStats, Game, MAP_IMAGE, Trait, TraitCategory},
     portraits::{self, Portrait},
     trom,
 };
@@ -108,6 +108,8 @@ struct Library {
     portraits: Vec<Portrait>,
     traits: Vec<Trait>,
     trait_error: Option<String>,
+    equipment: Result<EquipmentCatalog, String>,
+    trom_equipment: Option<Result<EquipmentCatalog, String>>,
 }
 
 #[derive(Clone)]
@@ -137,6 +139,7 @@ impl Page {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FounderTab {
+    Identity,
     Portrait,
     Traits,
     Loadout,
@@ -357,18 +360,6 @@ impl Editor {
                 }
             },
         ));
-        subscriptions.push(cx.subscribe_in(
-            &founder_age,
-            window,
-            |editor, input, event: &NumberInputEvent, window, cx| {
-                let age = editor.config.founder_age;
-                let age = match event {
-                    NumberInputEvent::Step(StepAction::Increment) => (age + 1).min(MAX_FOUNDER_AGE),
-                    NumberInputEvent::Step(StepAction::Decrement) => (age - 1).max(MIN_FOUNDER_AGE),
-                };
-                input.update(cx, |input, cx| input.set_value(age.to_string(), window, cx));
-            },
-        ));
         subscriptions.push(cx.subscribe(&search, |editor, _, event, cx| {
             if matches!(event, InputEvent::Change) {
                 editor.results_page = 0;
@@ -400,7 +391,7 @@ impl Editor {
             exporting: false,
             export_status: None,
             page: Page::Identity,
-            founder_tab: FounderTab::Portrait,
+            founder_tab: FounderTab::Identity,
             slot: "weapon",
             equipment_rarity: None,
             trait_category: None,
@@ -443,6 +434,15 @@ impl Editor {
                 Ok(traits) => (traits, None),
                 Err(error) => (Vec::new(), Some(format!("{error:#}"))),
             };
+            let workshop = game::workshop_packs();
+            let equipment = game
+                .equipment_stats(None)
+                .map_err(|error| format!("{error:#}"));
+            let trom_equipment = trom::packs(&workshop).ok().map(|[part_one, _]| {
+                game::open_pack(&part_one)
+                    .and_then(|pack| game.equipment_stats(Some(&pack)))
+                    .map_err(|error| format!("{error:#}"))
+            });
             let art_id = artwork.register(game.pack.clone());
             Ok::<_, anyhow::Error>((
                 path,
@@ -452,8 +452,10 @@ impl Editor {
                     portraits,
                     traits,
                     trait_error,
+                    equipment,
+                    trom_equipment,
                 },
-                game::workshop_packs(),
+                workshop,
             ))
         });
         cx.spawn(async move |entity, cx| {
@@ -1258,6 +1260,7 @@ impl Editor {
 
     fn founder(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let tabs = [
+            (FounderTab::Identity, "Personal details"),
             (FounderTab::Portrait, "Portrait"),
             (FounderTab::Traits, "Traits"),
             (FounderTab::Loadout, "Equipment"),
@@ -1271,6 +1274,7 @@ impl Editor {
             .child(
                 row_ui()
                     .gap_2()
+                    .flex_wrap()
                     .pt_1()
                     .pb_3()
                     .border_b_1()
@@ -1291,53 +1295,112 @@ impl Editor {
                             }))
                     })),
             )
-            .when(self.founder_tab == FounderTab::Portrait, |element| {
-                element.child(
-                    row_ui()
-                        .gap_4()
-                        .child(self.name_field(NameField::Family, cx))
-                        .child(self.name_field(NameField::Given, cx))
-                        .child(
-                            col()
-                                .w(px(148.))
-                                .flex_shrink_0()
-                                .gap_2()
-                                .child(caption(format!(
-                                    "Age · {MIN_FOUNDER_AGE}–{MAX_FOUNDER_AGE}"
-                                )))
-                                .child(NumberInput::new(&self.founder_age).w_full()),
-                        ),
-                )
-            })
-            .when(self.founder_tab != FounderTab::Traits, |element| {
-                element.child(
-                    col().gap_2().child(caption("Character class")).child(
-                        row_ui().gap_2().flex_wrap().children(CLASSES.map(
-                            |(class, name, _, tone)| {
-                                control(class, self.config.subtype == class)
-                                    .gap_2()
-                                    .child(dot(tone, 8.))
-                                    .child(name)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.config.subtype = class.into();
-                                        let element = class.trim_start_matches("3k_general_");
-                                        this.config
-                                            .starting_ancillaries
-                                            .retain(|_, key| ANCILLARIES[key].fits(element));
-                                        this.results_page = 0;
-                                        this.edited(cx);
-                                    }))
-                            },
-                        )),
-                    ),
-                )
-            })
             .child(match self.founder_tab {
+                FounderTab::Identity => self.founder_identity(cx).into_any_element(),
                 FounderTab::Portrait => self.portraits(cx),
                 FounderTab::Traits => self.traits(window, cx),
                 FounderTab::Loadout => self.equipment(cx),
             })
             .into_any_element()
+    }
+
+    fn founder_identity(&self, cx: &mut Context<Self>) -> Div {
+        panel()
+            .gap_5()
+            .child(
+                row_ui()
+                    .gap_4()
+                    .child(self.name_field(NameField::Family, cx))
+                    .child(self.name_field(NameField::Given, cx)),
+            )
+            .child(
+                col()
+                    .gap_2()
+                    .child(caption(format!(
+                        "Starting age · {MIN_FOUNDER_AGE}–{MAX_FOUNDER_AGE}"
+                    )))
+                    .child(
+                        row_ui()
+                            .id("founder-age")
+                            .items_center()
+                            .gap_1()
+                            .w(px(152.))
+                            .on_key_down(cx.listener(
+                                |this, event: &gpui::KeyDownEvent, window, cx| {
+                                    let step = match event.keystroke.key.as_str() {
+                                        "up" => 1,
+                                        "down" => -1,
+                                        _ => return,
+                                    };
+                                    this.step_founder_age(step, window, cx);
+                                    cx.stop_propagation();
+                                },
+                            ))
+                            .child(self.age_step_button(-1, cx))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(Input::new(&self.founder_age).w_full()),
+                            )
+                            .child(self.age_step_button(1, cx)),
+                    ),
+            )
+            .child(
+                col().gap_2().child(caption("Character class")).child(
+                    row_ui()
+                        .gap_2()
+                        .flex_wrap()
+                        .children(CLASSES.map(|(class, name, _, tone)| {
+                            control(class, self.config.subtype == class)
+                                .gap_2()
+                                .child(dot(tone, 8.))
+                                .child(name)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.config.subtype = class.into();
+                                    let element = class.trim_start_matches("3k_general_");
+                                    this.config
+                                        .starting_ancillaries
+                                        .retain(|_, key| ANCILLARIES[key].fits(element));
+                                    this.results_page = 0;
+                                    this.edited(cx);
+                                }))
+                        })),
+                ),
+            )
+    }
+
+    fn age_step_button(&self, step: i8, cx: &mut Context<Self>) -> Button {
+        let (id, tooltip, sign, limit) = if step < 0 {
+            ("younger", "Decrease age", "−", MIN_FOUNDER_AGE)
+        } else {
+            ("older", "Increase age", "+", MAX_FOUNDER_AGE)
+        };
+        let disabled = self.config.founder_age == limit;
+        Button::new(id)
+            .w(px(36.))
+            .disabled(disabled)
+            .tooltip(tooltip)
+            .child(
+                div()
+                    .text_size(px(20.))
+                    .line_height(relative(1.))
+                    .text_color(rgb(if disabled { MUTED } else { PAPER }))
+                    .child(sign),
+            )
+            .on_click(
+                cx.listener(move |this, _, window, cx| this.step_founder_age(step, window, cx)),
+            )
+    }
+
+    fn step_founder_age(&mut self, step: i8, window: &mut Window, cx: &mut Context<Self>) {
+        let age = self
+            .config
+            .founder_age
+            .saturating_add_signed(step)
+            .clamp(MIN_FOUNDER_AGE, MAX_FOUNDER_AGE);
+        self.founder_age
+            .update(cx, |input, cx| input.set_value(age.to_string(), window, cx));
     }
 
     fn portraits(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1826,6 +1889,24 @@ impl Editor {
         let query = self.query(cx);
         let slot = self.slot;
         let selected = self.config.starting_ancillaries.get(slot);
+        let (stats, stats_note) = if self.config.trom_compat {
+            match &data.trom_equipment {
+                Some(Ok(stats)) => (Ok(stats), None),
+                _ => (
+                    data.equipment.as_ref(),
+                    Some(
+                        "TROM equipment stats are unavailable. Showing vanilla stats where available.",
+                    ),
+                ),
+            }
+        } else {
+            (data.equipment.as_ref(), None)
+        };
+        let stats_error = stats
+            .as_ref()
+            .err()
+            .map(|error| format!("Equipment stats unavailable. {error}"));
+        let stats = stats.ok();
         let mut entries = ANCILLARIES
             .iter()
             .filter_map(|(key, item)| {
@@ -1918,12 +1999,15 @@ impl Editor {
                             }),
                     ),
             )
+            .when_some(stats_note, |list, note| list.child(notice(note, GOLD)))
+            .when_some(stats_error, |list, error| list.child(notice(error, GOLD)))
             .child(self.pagination(Catalog::Equipment, page, false, cx))
             .child(
                 col().gap_2().children(entries[page.range()].iter().map(
                     |(key, item, title, desc)| {
                         let current = selected == Some(*key);
                         let key = (*key).clone();
+                        let item_stats = stats.and_then(|stats| stats.get(&key));
                         let (rarity, tone) = RARITIES
                             .iter()
                             .find(|(raw, _, _)| *raw == item.rarity)
@@ -1933,6 +2017,7 @@ impl Editor {
                             .h_auto()
                             .min_h(px(62.))
                             .py_2()
+                            .items_start()
                             .justify_start()
                             .gap_4()
                             .child(div().size(px(44.)).flex_shrink_0().child(picture(
@@ -1954,6 +2039,9 @@ impl Editor {
                                             .child(title.clone())
                                             .child(caption(rarity).text_color(rgb(tone))),
                                     )
+                                    .when_some(item_stats, |element, stats| {
+                                        element.child(equipment_stat_lines(stats))
+                                    })
                                     .when(!desc.is_empty(), |element| {
                                         element.child(body((*desc).to_owned()).w_full())
                                     }),
@@ -2587,6 +2675,45 @@ impl Editor {
                 )),
             )
     }
+}
+
+fn equipment_stat_lines(stats: &EquipmentStats) -> Div {
+    fn line(label: Option<&str>, stats: &[String], tone: u32) -> Div {
+        row_ui()
+            .gap_1()
+            .items_center()
+            .flex_wrap()
+            .when_some(label, |row, label| {
+                row.child(caption(label.to_owned()).mr_1())
+            })
+            .children(stats.iter().map(|stat| {
+                div()
+                    .px_2()
+                    .py(px(2.))
+                    .rounded(px(4.))
+                    .bg(rgb(INK))
+                    .text_size(px(12.))
+                    .text_color(rgb(tone))
+                    .child(stat.clone())
+            }))
+    }
+
+    col()
+        .gap_1()
+        .when(!stats.battle.is_empty(), |content| {
+            content.child(line(
+                stats.records.as_ref().map(|_| "Romance"),
+                &stats.battle,
+                PAPER,
+            ))
+        })
+        .when_some(
+            stats.records.as_ref().filter(|stats| !stats.is_empty()),
+            |content, records| content.child(line(Some("Records"), records, PAPER)),
+        )
+        .when(!stats.effects.is_empty(), |content| {
+            content.child(line(None, &stats.effects, JADE))
+        })
 }
 
 impl Render for Editor {
