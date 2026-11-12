@@ -20,7 +20,7 @@ struct Chain {
 const SECT_HALL: Chain = Chain {
     slug: "sect_hall",
     donor: "3k_district_government_religion",
-    description: "A permanent gathering place for the sect. Each tier improves public order and peasantry income in the commandery.",
+    description: "Followers gather here to share teachings and make offerings. Each tier earns culture income and builds Sect Influence each turn.",
     tiers: &["Meeting Hall", "Hall of Vows", "Seat of the Sect"],
 };
 const CULT_MARKET: Chain = Chain {
@@ -54,6 +54,9 @@ pub fn write(
         Variant::Cult => (&CULT_MARKET, &CULT_STASH),
     };
     let suffix = format!("{key}_founder_buildings");
+    if config.variant == Variant::Sect {
+        write_hall_influence(source, pack, loc, key, &suffix)?;
+    }
     add_rows(
         pack,
         "building_chain_availability_set_ids",
@@ -81,6 +84,52 @@ pub fn write(
             attachment,
         )?;
     }
+    Ok(())
+}
+
+fn write_hall_influence(
+    source: &Sources<'_>,
+    pack: &mut Pack,
+    loc: &mut Localization,
+    key: &str,
+    suffix: &str,
+) -> Result<()> {
+    let factor = format!("{key}_hall_influence");
+    let junction = format!("{factor}_junction");
+    let mut effect = source.effective("effects", &["effect"])?
+        .into_iter()
+        .find(|row| field(row, "effect") == "3k_dlc04_effect_pooled_resource_political_influence_increase_from_infrastructure")
+        .context("Missing vanilla influence effect for buildings")?;
+    set(&mut effect, "effect", factor.as_str());
+    for (table, rows) in [
+        ("effects", vec![effect]),
+        ("pooled_resource_factors", vec![row! {"key": factor}]),
+        (
+            "pooled_resource_factor_junctions",
+            vec![row! {
+                "factor": factor, "key": junction, "resource": format!("{key}_influence"),
+                "minimum": 0, "maximum": 1000, "ai_can_propose": false, "is_recurring_factor": true
+            }],
+        ),
+        (
+            "effect_bonus_value_pooled_resource_factor_junctions",
+            vec![row! {
+                "effect": factor, "bonus_value_id": "base_amount", "resource_factor": junction
+            }],
+        ),
+    ] {
+        add_rows(pack, table, suffix, rows)?;
+    }
+    loc.extend([
+        (
+            format!("effects_description_{factor}"),
+            "+%n Sect Influence per turn".into(),
+        ),
+        (
+            format!("pooled_resource_factors_display_name_positive_{factor}"),
+            "Hall offerings".into(),
+        ),
+    ]);
     Ok(())
 }
 
@@ -302,7 +351,7 @@ fn write_chain(
         groups.push(row! {"id": level_id});
         members.push(row! {"id": member, "group": level_id, "priority": 1.0});
         criteria.push(row! {"member": member, "building_level": level_id});
-        effects.extend(level_effects(&level_id, variant, attachment, tier));
+        effects.extend(level_effects(&level_id, key, variant, attachment, tier));
     }
     for (table, rows) in [
         ("building_levels", levels),
@@ -321,18 +370,27 @@ fn write_chain(
     Ok(())
 }
 
-fn level_effects(group: &str, variant: Variant, attachment: bool, tier: i32) -> [Row; 2] {
+fn level_effects(
+    group: &str,
+    key: &str,
+    variant: Variant,
+    attachment: bool,
+    tier: i32,
+) -> [Row; 2] {
     let order = "3k_main_effect_province_public_order_buildings";
-    let peasantry = "3k_main_effect_economy_gdp_mod_peasantry";
+    let culture = "3k_main_effect_economy_gdp_abs_culture";
     let food = "3k_main_effect_province_food_abs_farming";
     let banditry = "3k_dlc05_effect_economy_gdp_abs_banditry";
     let supplies =
         "3k_main_effect_province_supply_stockpile_abs_increase_from_residential_infrastructure";
     let province = "province_to_province_own_unseen";
-    let local = "region_to_region_own_provincewide_unseen";
     let building = "building_to_building_own";
+    let hall_influence = format!("{key}_hall_influence");
     match (variant, attachment) {
-        (Variant::Sect, false) => [(order, province, tier * 2), (peasantry, local, tier * 8)],
+        (Variant::Sect, false) => [
+            (hall_influence.as_str(), "building_to_faction_unseen", tier),
+            (culture, building, [80, 150, 240][tier as usize - 1]),
+        ],
         (Variant::Sect, true) => [
             (order, province, tier),
             (food, "region_to_region_own_unseen_province_pool_view_hidden", tier),

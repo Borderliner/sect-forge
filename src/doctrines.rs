@@ -729,7 +729,7 @@ fn influence(
     let description = if cult {
         "Gain 5 Influence for each newly sacked commandery seat. Lose 1 each turn and 5 when a fence's contract expires. At 10 / 25 / 50 Influence, gain +5% / +10% / +20% settlement looting income."
     } else {
-        "Gain 1 Influence per turn, with one-time gains from doctrines and chapters. Lose 6 if another faction captures one of your settlements, 10 if your patron falls, and 5 if households go without relief. At 25 / 75 / 150 Influence, gain +10% / +25% / +50% background income."
+        "Gain 1 Influence per turn, plus income from Meeting Halls and one-time gains from doctrines and chapters. Lose 6 if another faction captures one of your settlements, 10 if your patron falls, and 5 if households go without relief. At 25 / 75 / 150 Influence, gain +10% / +25% / +50% background income."
     };
     loc.extend([
         (

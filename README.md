@@ -53,7 +53,7 @@ For a **Sect**, envoys reveal the seats of active factions at the start. Choose 
 
 For a **Cult**, each new sack earns 5 Influence. Lose 1 per turn and 5 when a fence's contract expires. At 10, 25, and 50 Influence, gain +5%, +10%, and +20% settlement looting income. Market Fences can offer a five-turn contract after your first sack. Your armies lose campaign movement while the contract is open.
 
-Sects can upgrade a **Meeting Hall** for public order and peasantry income. Cults can upgrade a **Fences' Den** for banditry income and supply stockpiles. In TROM, build a **Wayside Shrine** or **Hidden Stash** in the attachment slot of an owned minor settlement.
+Sects can upgrade a **Meeting Hall** for recurring Sect Influence and culture income. Cults can upgrade a **Fences' Den** for banditry income and supply stockpiles. In TROM, build a **Wayside Shrine** or **Hidden Stash** in the attachment slot of an owned minor settlement.
 
 ### Sect Mode
 

@@ -360,6 +360,7 @@ mod tests {
             ("building_superchains", 2),
             ("building_ui_groups_to_superchains", 0),
             ("building_effects_junction", 5),
+            ("effect_bonus_value_pooled_resource_factor_junctions", 1),
             ("slot_template_to_building_superchain_junctions", 0),
         ] {
             add_rows(&mut pack, table, "fixture", vec![Row::new()])?;
