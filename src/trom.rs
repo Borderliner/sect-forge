@@ -16,6 +16,14 @@ const DORMANT: &str = "3k_main_faction_wuwei";
 const SHI_XIE: &str = "3k_main_faction_shi_xie";
 pub const REFORMS: &str = "script/campaign/mod/hv_script_reforms.lua";
 
+// Indices in CAMPAIGN_COMMAND_QUEUE_INDEX_TABLES for the supported TROM startpos.
+const UNIT_CQI: usize = 4;
+const FORCE_CQI: usize = 5;
+const PERSISTENT_RETINUE_CQI: usize = 25;
+const PERSISTENT_SLOT_CQI: usize = 26;
+const DEPLOYED_RETINUE_CQI: usize = 27;
+const DEPLOYED_SLOT_CQI: usize = 28;
+
 pub fn packs(workshop: &[PathBuf]) -> Result<[PathBuf; 2]> {
     let find = |part, id, file| {
         workshop
@@ -150,23 +158,51 @@ fn founder(
         .one(&world.root, "CAMPAIGN_COMMAND_QUEUE_INDEX_TABLES")?
         .fields();
     let new_char = reserve(edit, counters, &[0, 21], 1)?;
-    let new_army = reserve(edit, counters, &[5, 25], 1)?;
-    let new_unit = reserve(edit, counters, &[4, 26], units.len())?;
-    let new_retinue = reserve(edit, counters, &[32, 33], 2)?;
-    let new_slot = reserve(edit, counters, &[28], slots.len())?;
+    let new_army = reserve(edit, counters, &[FORCE_CQI], 1)?;
+    let new_unit = reserve(edit, counters, &[UNIT_CQI], units.len())?;
+    let new_retinue = reserve(edit, counters, &[DEPLOYED_RETINUE_CQI], 1)?;
+    let new_persistent_retinue = reserve(edit, counters, &[PERSISTENT_RETINUE_CQI], 1)?;
+    let new_slot = reserve(edit, counters, &[DEPLOYED_SLOT_CQI], slots.len())?;
+    let new_persistent_slot = reserve(edit, counters, &[PERSISTENT_SLOT_CQI], slots.len())?;
     let mut ids = HashMap::from([
         (char_id, new_char),
         (force_id, new_army),
         (donor.id(&retinue[0])?, new_retinue),
-        (donor.id(&retinue[1])?, new_retinue + 1),
+        (donor.id(&retinue[1])?, new_persistent_retinue),
     ]);
     for (index, node) in units.iter().enumerate() {
         ids.insert(donor.id(&node.fields()[0])?, new_unit + index as u32);
     }
+    let deployed_slots: HashMap<_, _> = donor
+        .find(force, "MILITARY_FORCE_RETINUE_SLOT")
+        .into_iter()
+        .map(|slot| Ok((donor.id(&slot.fields()[0])?, slot)))
+        .collect::<Result<_>>()?;
+    ensure!(
+        deployed_slots.len() == slots.len(),
+        "Founder retinue slots differ"
+    );
+    let mut persistent_slots = HashMap::new();
+    let mut force_slots = HashMap::new();
     for (index, group) in slots.iter().enumerate() {
-        ids.insert(donor.id(&group[0].fields()[1])?, new_slot + index as u32);
+        let fields = group[0].fields();
+        let deployed_id = donor.id(&fields[1])?;
+        let deployed = deployed_slots
+            .get(&deployed_id)
+            .context("Missing deployed founder retinue slot")?
+            .fields();
+        ensure!(
+            donor.id(&fields[0])? == donor.id(&deployed[1])?,
+            "Founder retinue slot references differ"
+        );
+        let persistent_id = integer(new_persistent_slot + u32::try_from(index)?);
+        persistent_slots.insert(fields[0].start, persistent_id.clone());
+        force_slots.insert(deployed[1].start, persistent_id);
+        ids.insert(deployed_id, new_slot + u32::try_from(index)?);
     }
-    let imported = edit.import(donor, army, &remap(donor, army, &ids))?;
+    let mut army_changes = remap(donor, army, &ids);
+    army_changes.extend(force_slots);
+    let imported = edit.import(donor, army, &army_changes)?;
     edit.replace(world.one(faction, "ARMY_ARRAY")?, imported);
     let fields = faction.fields();
     let mut shroud = vec![0x12];
@@ -197,7 +233,9 @@ fn founder(
         .context("Missing faction leader post")?;
     ids.insert(old_post, world.id(&post.fields()[0])?);
     ids.insert(donor.id(&origin.fields()[0])?, world.id(&fields[0])?);
-    let imported = edit.import(donor, character, &remap(donor, character, &ids))?;
+    let mut character_changes = remap(donor, character, &ids);
+    character_changes.extend(persistent_slots);
+    let imported = edit.import(donor, character, &character_changes)?;
     edit.append(world.one(&world.root, "CHARACTERS")?, imported);
 
     let family = world.one(&world.root, "FAMILY_TREE")?.fields();
