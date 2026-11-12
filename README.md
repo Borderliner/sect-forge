@@ -46,7 +46,7 @@ Workshop packs can be found by filename or ID, or opened directly from disk. Com
 | **Sect** | **Cult** |
 | --- | --- |
 | Grow Influence through doctrines and chapters. Collect donations, fund congregations, and send war chests to your patron. | Expand the Bandit Network, unlock capped recruits, and take timed raid contracts. |
-| **24 reforms** across community, defence, and patronage. | **24 additional reforms** across raiding, recruitment, and stronghold development. |
+| **36 reforms** across community, defence, and patronage. | **36 additional reforms** across raiding, recruitment, and stronghold development. |
 | **Victory** when your chosen patron claims an imperial throne. | **Victory** after using **Sack and Withdraw** in 30 distinct commandery cities. |
 
 For a **Sect**, envoys reveal the seats of active factions at the start. Choose a patron through a standalone **Make regular payments** deal. Gain 1 Influence per turn and earn one-time boosts from research and up to five chapters. Losing a settlement or a patron costs Influence. When households need relief, you can spend 600 to keep their support. At 25, 75, and 150 Influence, donations grant +10%, +25%, and +50% background income.
@@ -63,7 +63,7 @@ Turn Sect Mode off for unrestricted expansion and normal building resource requi
 
 ### TROM 5.2
 
-Install both TROM Workshop parts and select **TROM compatibility · 5.2** in **Review & export**. Enable the generated `!sects_<name>_trom.pack` above both parts in your mod manager. Sect Forge reads TROM Part 1 and checks its 190 CE start positions for both campaign modes.
+Install both TROM Workshop parts and select **TROM compatibility · 5.2** in **Review & export**. Enable the generated `!sects_<name>_trom.pack` above both parts in your mod manager. Sect Forge checks TROM Part 1's 190 CE start positions and places the faction in its selected settlement in both campaign modes.
 
 Enable one generated faction pack at a time. Other mods that replace the same campaign start or research screen can conflict. Close the game before overwriting an existing pack.
 

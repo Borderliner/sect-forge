@@ -128,3 +128,9 @@ ID and a matching member in the campaign family tree. Without the family-tree
 entry, the game crashes while calculating campaign statistics before the first
 Lua tick. The merger checks the two TROM start position hashes before applying
 these layout-specific edits.
+
+The merger assigns the chosen settlement in the frontend roster and campaign
+world. The game initializes its campaign AI from the shipped TROM data.
+Editing the serialized AI graph directly caused a crash during campaign
+loading, so the merger leaves those records to the game. For starts outside
+Hepu, the opening script also skips the temporary transfer of Shi Xie's city.

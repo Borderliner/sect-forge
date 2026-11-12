@@ -8,6 +8,7 @@ local thresholds = { __INFLUENCE_TIERS__ }
 local starting_traits = { __STARTING_TRAITS__ }
 local starting_ancillaries = { __STARTING_ANCILLARIES__ }
 local starting_region = "__START_REGION__"
+local start_preplaced = __START_PREPLACED__
 local starting_owner = "__START_OWNER__"
 local starting_building = "__START_BUILDING__"
 local sect_mode = __SECT_MODE__
@@ -29,10 +30,10 @@ local function faction()
     return cm:query_faction(faction_key)
 end
 
-local function prepare_opening_army(owner)
+local function prepare_opening_army(owner, reposition)
     if not owner:has_capital_region() or not owner:has_faction_leader() then return end
     local leader = owner:faction_leader()
-    if not leader:has_military_force() or leader:action_points_remaining_percent() > 0 then return end
+    if not leader:has_military_force() or (not reposition and leader:action_points_remaining_percent() > 0) then return end
 
     -- The BOB template places the leader by Hepu but can leave the army unable to move.
     local army = cm:modify_character(leader)
@@ -318,7 +319,9 @@ end
 cm:add_first_tick_callback(function()
     local owner = faction()
     if not owner or owner:is_null_interface() or owner:is_dead() then return end
-    if cm:is_new_game() and starting_region == hepu then prepare_opening_army(owner) end
+    if cm:is_new_game() and (start_preplaced or starting_region == hepu) then
+        prepare_opening_army(owner, start_preplaced and starting_region ~= hepu)
+    end
     reconcile_base()
     update_influence_effects()
     if not is_cult then establish_initial_contacts(owner) end
@@ -334,7 +337,7 @@ cm:add_first_tick_callback_new(function()
         set_starting_traits(owner)
         equip_starting_ancillaries(owner)
         cm:modify_faction(faction_key):set_tech_research_cooldown(0)
-        if starting_region ~= hepu then place_starting_city(owner) end
+        if not start_preplaced and starting_region ~= hepu then place_starting_city(owner) end
     end
 end)
 

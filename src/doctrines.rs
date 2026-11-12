@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 use rpfm_lib::files::{Container, pack::Pack};
@@ -50,10 +50,24 @@ const fn reform(
 }
 
 // Each scroll opens two paths and reunites them at its final reform.
-const PARENTS: [&[usize]; 8] = [&[], &[0], &[0], &[1], &[2], &[3], &[4], &[5, 6]];
-const STAGES: [i32; 8] = [0, 1, 1, 2, 2, 3, 3, 4];
+const PARENTS: [&[usize]; 12] = [
+    &[],
+    &[0],
+    &[0],
+    &[1],
+    &[2],
+    &[3],
+    &[4],
+    &[10, 11],
+    &[5],
+    &[6],
+    &[8],
+    &[9],
+];
+const STAGES: [i32; 12] = [0, 1, 1, 2, 2, 3, 3, 6, 4, 4, 5, 5];
+const FORKS: [i32; 12] = [0, -1, 1, -1, 1, -1, 1, 0, -1, 1, -1, 1];
 
-const SECT: [[Doctrine; 8]; 3] = [
+const SECT: [[Doctrine; 12]; 3] = [
     [
         reform(
             "lay_teachers",
@@ -118,6 +132,38 @@ const SECT: [[Doctrine; 8]; 3] = [
             2,
             ORDER,
             2,
+        ),
+        reform(
+            "public_wells",
+            "Public Wells",
+            "Keep clean water available in every village.",
+            0,
+            ORDER,
+            1,
+        ),
+        reform(
+            "artisan_exchanges",
+            "Artisan Exchanges",
+            "Let established workshops take on apprentices from outlying villages.",
+            0,
+            INDUSTRY,
+            8,
+        ),
+        reform(
+            "common_storehouses",
+            "Common Storehouses",
+            "Pool food and supplies across the congregation.",
+            1,
+            FOOD,
+            6,
+        ),
+        reform(
+            "school_charters",
+            "School Charters",
+            "Endow permanent schools in the towns you serve.",
+            1,
+            TRADE,
+            6,
         ),
     ],
     [
@@ -185,6 +231,38 @@ const SECT: [[Doctrine; 8]; 3] = [
             RECRUIT,
             -6,
         ),
+        reform(
+            "veteran_instructors",
+            "Veteran Instructors",
+            "Assign veterans to train new recruits before they march.",
+            0,
+            RECRUIT,
+            -4,
+        ),
+        reform(
+            "route_wardens",
+            "Route Wardens",
+            "Escort supply caravans through stretches of exposed road.",
+            0,
+            SUPPLIES,
+            3,
+        ),
+        reform(
+            "reserve_musters",
+            "Reserve Musters",
+            "Maintain a trained reserve that can reinforce retinues.",
+            0,
+            REPLENISH,
+            3,
+        ),
+        reform(
+            "beacon_routes",
+            "Beacon Routes",
+            "Use relay beacons to warn nearby garrisons of raids.",
+            0,
+            MOVE,
+            3,
+        ),
     ],
     [
         reform(
@@ -251,10 +329,42 @@ const SECT: [[Doctrine; 8]; 3] = [
             BACKGROUND,
             8,
         ),
+        reform(
+            "relief_subscriptions",
+            "Relief Subscriptions",
+            "Collect regular contributions from guilds and households.",
+            1,
+            BACKGROUND,
+            4,
+        ),
+        reform(
+            "caravan_accords",
+            "Caravan Accords",
+            "Negotiate better terms with caravans supplying the sect.",
+            0,
+            TRADE,
+            8,
+        ),
+        reform(
+            "patron_envoys",
+            "Patron Envoys",
+            "Maintain a permanent delegation at your patron's court.",
+            1,
+            BACKGROUND,
+            5,
+        ),
+        reform(
+            "letters_of_safe_conduct",
+            "Letters of Safe Conduct",
+            "Arrange passage for delegates across disputed territory.",
+            0,
+            MOVE,
+            3,
+        ),
     ],
 ];
 
-const CULT: [[Doctrine; 8]; 3] = [
+const CULT: [[Doctrine; 12]; 3] = [
     [
         reform(
             "lookouts",
@@ -319,6 +429,38 @@ const CULT: [[Doctrine; 8]; 3] = [
             0,
             SUPPLIES,
             6,
+        ),
+        reform(
+            "river_informants",
+            "River Informants",
+            "Pay ferrymen to report troop movements and unattended crossings.",
+            0,
+            MOVE,
+            3,
+        ),
+        reform(
+            "concealed_warehouses",
+            "Concealed Warehouses",
+            "Break up large shipments before selling them through fences.",
+            0,
+            TRADE,
+            7,
+        ),
+        reform(
+            "relay_routes",
+            "Relay Routes",
+            "Keep supplies along escape routes so raiding parties can stay out longer.",
+            0,
+            SUPPLIES,
+            4,
+        ),
+        reform(
+            "brokerage_shares",
+            "Brokerage Shares",
+            "Give reliable fences a share of each successful raid.",
+            0,
+            TRADE,
+            8,
         ),
     ],
     [
@@ -386,6 +528,38 @@ const CULT: [[Doctrine; 8]; 3] = [
             RECRUIT,
             -6,
         ),
+        reform(
+            "bounty_musters",
+            "Bounty Musters",
+            "Use bounties to fill out retinues after a costly raid.",
+            0,
+            RECRUIT,
+            -5,
+        ),
+        reform(
+            "trail_surgeons",
+            "Trail Surgeons",
+            "Give wounded raiders a place to recover between expeditions.",
+            0,
+            REPLENISH,
+            3,
+        ),
+        reform(
+            "stockade_drills",
+            "Stockade Drills",
+            "Train raiders at the hideout before sending them out together.",
+            0,
+            RECRUIT,
+            -4,
+        ),
+        reform(
+            "supply_runners",
+            "Supply Runners",
+            "Keep separate supply parties in contact with the warband.",
+            0,
+            SUPPLIES,
+            4,
+        ),
     ],
     [
         reform(
@@ -452,10 +626,42 @@ const CULT: [[Doctrine; 8]; 3] = [
             ORDER,
             3,
         ),
+        reform(
+            "hidden_farms",
+            "Hidden Farms",
+            "Maintain small farms beyond the roads most patrols use.",
+            0,
+            FOOD,
+            5,
+        ),
+        reform(
+            "salvage_yards",
+            "Salvage Yards",
+            "Put captured equipment and materials back to use.",
+            0,
+            INDUSTRY,
+            7,
+        ),
+        reform(
+            "bolt_holes",
+            "Bolt-Holes",
+            "Prepare safe rooms for the cult's followers during a siege.",
+            0,
+            ORDER,
+            2,
+        ),
+        reform(
+            "outlaw_markets",
+            "Outlaw Markets",
+            "Trade supplies with other warbands at discreet markets.",
+            0,
+            TRADE,
+            8,
+        ),
     ],
 ];
 
-pub fn tree(variant: Variant) -> &'static [[Doctrine; 8]; 3] {
+pub fn tree(variant: Variant) -> &'static [[Doctrine; 12]; 3] {
     match variant {
         Variant::Sect => &SECT,
         Variant::Cult => &CULT,
@@ -545,8 +751,8 @@ pub fn write(
     let mut technology_nodes = Vec::new();
     let mut links = Vec::new();
     let mut junctions = Vec::new();
-    for (branch, scroll) in tree(config.variant).iter().enumerate() {
-        let donor = donors[branch];
+    for (branch, donor) in donors.into_iter().enumerate() {
+        let scroll = &tree(config.variant)[branch];
         let template = techs
             .iter()
             .find(|row| field(row, "key") == donor)
@@ -562,6 +768,12 @@ pub fn write(
         } else {
             format!("{key}_3k_main_tech_cat_wood")
         };
+        let first_custom_indent = nodes
+            .iter()
+            .filter(|row| field(row, "technology_node_set") == set_key)
+            .filter_map(|row| row.get("indent")?.as_i64())
+            .max()
+            .map_or(0, |indent| indent + 1) as i32;
         for (index, doctrine) in scroll.iter().enumerate() {
             let name = format!("{key}_{}", doctrine.slug);
             let mut tech = template.clone();
@@ -580,7 +792,9 @@ pub fn write(
                 set(&mut node, column, value);
             }
             set(&mut node, "tier", STAGES[index]);
-            set(&mut node, "indent", index as i32);
+            // Reusing a tier and indent in one set makes the game drop one of the nodes.
+            let indent = first_custom_indent + (branch * scroll.len() + index) as i32;
+            set(&mut node, "indent", indent);
             set(
                 &mut node,
                 "research_points_required",
@@ -855,6 +1069,49 @@ fn rewrite(element: &mut Element, ids: &BTreeMap<String, String>, donor: &str, t
     }
 }
 
+fn hide_han_component(component: &mut Element, faction: &str) {
+    let list = if component.get_child("callbacks_with_context").is_some() {
+        "callbacks_with_context"
+    } else {
+        "callbackwithcontextlist"
+    };
+    if component.get_child(list).is_none() {
+        component
+            .children
+            .push(XMLNode::Element(Element::new(list)));
+    }
+    let callbacks = component.get_mut_child(list).unwrap();
+    let condition = format!("PlayersFaction.FactionRecordContext.Key == \"{faction}\"");
+    for callback in callbacks
+        .children
+        .iter_mut()
+        .filter_map(XMLNode::as_mut_element)
+    {
+        if callback
+            .attributes
+            .get("callback_id")
+            .is_some_and(|id| id == "ContextVisibilitySetter")
+            && let Some(expression) = callback.attributes.get_mut("context_function_id")
+            && expression == "IsDisabled"
+        {
+            *expression = format!("GetIfElse({condition}, true, IsDisabled)");
+            return;
+        }
+    }
+    let mut callback = Element::new("callback_with_context");
+    for (field, value) in [
+        ("callback_id", "ContextVisibilitySetter".to_owned()),
+        ("context_object_id", "CcoCampaignRoot".to_owned()),
+        (
+            "context_function_id",
+            format!("PlayersFaction.FactionRecordContext.Key != \"{faction}\""),
+        ),
+    ] {
+        callback.attributes.insert(field.into(), value);
+    }
+    callbacks.children.push(XMLNode::Element(callback));
+}
+
 fn layout(bytes: &[u8], key: &str, variant: Variant, donors: &[&str; 3]) -> Result<Vec<u8>> {
     let cult = variant == Variant::Cult;
     let holder = if cult {
@@ -878,10 +1135,23 @@ fn layout(bytes: &[u8], key: &str, variant: Variant, donors: &[&str; 3]) -> Resu
     let tree_holder = walk(hierarchy)
         .find(|node| node.name == holder)
         .context("Missing research tree")?;
+    let han_components = (!cult).then(|| {
+        tree_holder
+            .children
+            .iter()
+            .filter_map(XMLNode::as_element)
+            .filter(|node| {
+                node.name == "tree"
+                    || node.name.starts_with("elemental_frame_")
+                    || node.name.starts_with("_3k_")
+            })
+            .filter_map(|node| node.attributes.get("this").cloned())
+            .collect::<BTreeSet<_>>()
+    });
     let mut new_nodes = Vec::new();
     let mut new_definitions = Vec::new();
-    for (branch, scroll) in tree(variant).iter().enumerate() {
-        let donor = donors[branch];
+    for (branch, &donor) in donors.iter().enumerate() {
+        let scroll = &tree(variant)[branch];
         for (index, doctrine) in scroll.iter().enumerate() {
             let technology = format!("{key}_{}", doctrine.slug);
             let mut node = tree_holder
@@ -914,7 +1184,7 @@ fn layout(bytes: &[u8], key: &str, variant: Variant, donors: &[&str; 3]) -> Resu
                                 )
                                 .to_string()
                                 .to_uppercase();
-                                format!("{}{}", &id[..18], &id[19..])
+                                format!("{}{}", &id[..23], &id[24..])
                             });
                         }
                     }
@@ -925,11 +1195,11 @@ fn layout(bytes: &[u8], key: &str, variant: Variant, donors: &[&str; 3]) -> Resu
             for mut copy in copies {
                 rewrite(&mut copy, &ids, donor, &technology);
                 if copy.attributes.get("id") == Some(&technology) {
-                    let fork = [0, -1, 1, -1, 1, -1, 1, 0][index];
+                    let fork = FORKS[index];
                     let (x, y) = if cult {
                         // Keep the new branches clear of native locations on both maps.
                         let (x, y) = [(40, 55), (0, 475), (0, 980)][branch];
-                        (x + STAGES[index] * 55, y + fork * 30)
+                        (x + STAGES[index] * 38, y + fork * 30)
                     } else {
                         (
                             470 + STAGES[index] * 156,
@@ -947,10 +1217,23 @@ fn layout(bytes: &[u8], key: &str, variant: Variant, donors: &[&str; 3]) -> Resu
         .unwrap()
         .children
         .extend(new_nodes);
-    root.get_mut_child("components")
-        .unwrap()
-        .children
-        .extend(new_definitions);
+    let components = root.get_mut_child("components").unwrap();
+    if let Some(ids) = han_components {
+        for component in components
+            .children
+            .iter_mut()
+            .filter_map(XMLNode::as_mut_element)
+        {
+            if component
+                .attributes
+                .get("this")
+                .is_some_and(|id| ids.contains(id))
+            {
+                hide_han_component(component, key);
+            }
+        }
+    }
+    components.children.extend(new_definitions);
     let mut output = Vec::new();
     root.write_with_config(&mut output, EmitterConfig::new().perform_indent(false))?;
     Ok(output)

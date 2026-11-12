@@ -7,9 +7,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     caab::{Document, Edit, Node, integer, remap},
-    config::{Config, HEPU},
+    config::{Config, HEPU, Settlement},
     startpos::{Mode, compression_record, open_world},
 };
+
+mod settlement;
 
 const MARKER: usize = 60442;
 const DORMANT: &str = "3k_main_faction_wuwei";
@@ -142,6 +144,7 @@ fn founder(
     faction: &Node,
     origin: &Node,
     key: &str,
+    site: &Settlement,
 ) -> Result<()> {
     let world = edit.doc;
     let character = donor.record("PERSISTENT_CHARACTER", 10, &format!("{key}_leader"))?;
@@ -235,6 +238,20 @@ fn founder(
     ids.insert(donor.id(&origin.fields()[0])?, world.id(&fields[0])?);
     let mut character_changes = remap(donor, character, &ids);
     character_changes.extend(persistent_slots);
+    if site.key != HEPU {
+        let position = donor.one(character, "LOCOMOTABLE")?.fields();
+        let mut display = vec![0x0c];
+        let x = (f32::from(site.x) + 0.5) * (2.0 / 3.0);
+        let y = (f32::from(site.y) + 0.5) * (4.0 / (3.0 * 3.0_f32.sqrt()));
+        display.extend(x.to_le_bytes());
+        display.extend(y.to_le_bytes());
+        character_changes.insert(position[0].start, display);
+        for (field, coordinate) in [(&position[1], site.x), (&position[2], site.y)] {
+            let mut bytes = vec![7];
+            bytes.extend(coordinate.to_le_bytes());
+            character_changes.insert(field.start, bytes);
+        }
+    }
     let imported = edit.import(donor, character, &character_changes)?;
     edit.append(world.one(&world.root, "CHARACTERS")?, imported);
 
@@ -260,7 +277,13 @@ fn founder(
     equipment(edit, donor, counters, char_id, new_char)
 }
 
-fn roster(edit: &mut Edit<'_>, donor: &Document, key: &str, in_world: bool) -> Result<()> {
+fn roster(
+    edit: &mut Edit<'_>,
+    donor: &Document,
+    key: &str,
+    region: &str,
+    in_world: bool,
+) -> Result<()> {
     let doc = edit.doc;
     edit.rename(DORMANT, key, "flags");
     for node in doc.find(&doc.root, "CAMPAIGN_PLAYER_SETUP") {
@@ -279,35 +302,8 @@ fn roster(edit: &mut Edit<'_>, donor: &Document, key: &str, in_world: bool) -> R
         let bytes = edit.import(donor, &source[index], &HashMap::new())?;
         edit.replace(&info[index], bytes);
     }
-    let hepu = doc.group("REGION_OWNERSHIPS", 0, HEPU)?;
-    edit.replace_text(&hepu[1], key);
-    Ok(())
-}
-
-fn transfer_hepu(edit: &mut Edit<'_>, faction: &Node, key: &str, config: &Config) -> Result<()> {
-    let doc = edit.doc;
-    let hepu = doc.record("REGION", 1, HEPU)?;
-    let region = doc.id(&hepu.fields()[0])?;
-    edit.replace_int(&faction.fields()[16], region);
-    edit.replace_int(&faction.fields()[17], region);
-    edit.replace_int(&hepu.fields()[7], doc.id(&faction.fields()[0])?);
-    for node in doc.find(hepu, "BUILDING_BASE") {
-        edit.replace_text(&node.fields()[4], key);
-    }
-    let shi = doc.record("FACTION", 1, SHI_XIE)?;
-    edit.replace_int(&shi.fields()[32], doc.id(&shi.fields()[32])? - 1);
-    if let Some((old, new, _)) = config.settlement().and_then(|site| site.buildings.as_ref()) {
-        let target = doc.record("REGION", 1, &config.start_region)?;
-        for name in ["BUILDING_BASE", "SETTLEMENT"] {
-            for node in doc.find(target, name) {
-                for field in node.fields() {
-                    if doc.text(field) == Some(old) {
-                        edit.replace_text(field, new);
-                    }
-                }
-            }
-        }
-    }
+    let ownership = doc.group("REGION_OWNERSHIPS", 0, region)?;
+    edit.replace_text(&ownership[1], key);
     Ok(())
 }
 
@@ -336,16 +332,17 @@ pub fn merge(
     )?)?;
     let mut frontend_edit = Edit::new(&frontend);
     let mut edit = Edit::new(&world);
-    roster(&mut frontend_edit, &donor_frontend, key, false)?;
-    roster(&mut edit, &donor_frontend, key, true)?;
+    let site = config.settlement().context("Missing starting settlement")?;
+    roster(&mut frontend_edit, &donor_frontend, key, &site.key, false)?;
+    roster(&mut edit, &donor_frontend, key, &site.key, true)?;
     let faction = world.record("FACTION", 1, DORMANT)?;
     let origin = donor.record("FACTION", 1, key)?;
     for name in ["FACTION_FLAG_AND_COLOURS", "FACTION_TECHNOLOGY_MANAGER"] {
         let bytes = edit.import(&donor, donor.one(origin, name)?, &HashMap::new())?;
         edit.replace(world.one(faction, name)?, bytes);
     }
-    transfer_hepu(&mut edit, faction, key, config)?;
-    founder(&mut edit, &donor, faction, origin, key)?;
+    settlement::place(&mut edit, faction, key, site)?;
+    founder(&mut edit, &donor, faction, origin, key, site)?;
     let container = frontend.one(&frontend.root, "COMPRESSED_DATA")?;
     let mut bytes = frontend.data[container.start..container.fields()[0].start - 5].to_vec();
     bytes.extend(compression_record(&frontend.data, &edit.finish()?)?);

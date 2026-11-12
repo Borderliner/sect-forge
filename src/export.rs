@@ -774,6 +774,10 @@ fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
         ("__STARTING_TRAITS__", traits.as_str()),
         ("__STARTING_ANCILLARIES__", equipment.as_str()),
         ("__START_REGION__", site.key.as_str()),
+        (
+            "__START_PREPLACED__",
+            if config.trom_compat { "true" } else { "false" },
+        ),
         ("__START_OWNER__", if site.han { HAN } else { "rebels" }),
         (
             "__START_BUILDING__",
