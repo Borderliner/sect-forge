@@ -1127,24 +1127,24 @@ fn add_sect_backdrop(root: &mut Element, faction: &str) -> Result<()> {
     let hierarchy = root
         .get_mut_child("hierarchy")
         .context("Missing research hierarchy")?;
-    let panel = find_mut(hierarchy, "tech_tree").context("Missing research panel")?;
+    let panel = find_mut(hierarchy, "tech_tree_component").context("Missing research tree")?;
     let mut backdrop = Element::new("sect_forge_reform_backdrop");
     backdrop.attributes.insert("this".into(), COMPONENT.into());
     panel.children.insert(0, XMLNode::Element(backdrop));
 
     let definition = format!(
-        r##"<sect_forge_reform_backdrop id="sect_forge_reform_backdrop" this="{COMPONENT}" uniqueguid="{COMPONENT}" currentstate="{STATE}" defaultstate="{STATE}">
+        r##"<sect_forge_reform_backdrop id="sect_forge_reform_backdrop" this="{COMPONENT}" uniqueguid="{COMPONENT}" currentstate="{STATE}" defaultstate="{STATE}" docking="Center" component_anchor_point="0.50,0.50" isaspectratiolocked="true" isrelativeresize="true">
   <callbackwithcontextlist>
-    <callback_with_context callback_id="ScreenSizedComponent"/>
-    <callback_with_context callback_id="ContextVisibilitySetter" context_object_id="CcoCampaignRoot" context_function_id="PlayersFaction.FactionRecordContext.Key == &quot;{faction}&quot;"/>
+    <callback_with_context callback_id="ContextVisibilitySetter" context_object_id="CcoCampaignFaction" context_function_id="FactionRecordContext.Key == &quot;{faction}&quot;"/>
+    <callback_with_context callback_id="ContextInitPlayerFaction"/>
   </callbackwithcontextlist>
   <componentimages>
     <component_image this="{IMAGE}" uniqueguid="{IMAGE}" imagepath="{SECT_BACKDROP}" width="1672" height="941"/>
   </componentimages>
   <states>
-    <default this="{STATE}" uniqueguid="{STATE}" name="default" width="1920" height="1080" texthbehaviour="Never split">
-      <imagemetrics><image componentimage="{IMAGE}" width="1920" height="1080" colour="#DEDAD2FF"/></imagemetrics>
-    </default>
+    <newstate this="{STATE}" uniqueguid="{STATE}" name="NewState" width="1920" height="1080" texthbehaviour="Never split">
+      <imagemetrics><image componentimage="{IMAGE}" width="1920" height="1080"/></imagemetrics>
+    </newstate>
   </states>
 </sect_forge_reform_backdrop>"##
     );

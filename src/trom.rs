@@ -343,7 +343,7 @@ pub fn merge(
         let bytes = edit.import(&donor, donor.one(origin, name)?, &HashMap::new())?;
         edit.replace(world.one(faction, name)?, bytes);
     }
-    settlement::place(&mut edit, faction, key, site)?;
+    settlement::place(&mut edit, faction, &donor, origin, key, site)?;
     founder(&mut edit, &donor, faction, origin, key, site)?;
     let container = frontend.one(&frontend.root, "COMPRESSED_DATA")?;
     let mut bytes = frontend.data[container.start..container.fields()[0].start - 5].to_vec();
