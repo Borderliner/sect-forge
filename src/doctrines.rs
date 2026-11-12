@@ -467,7 +467,7 @@ pub fn gains(variant: Variant) -> String {
         .iter()
         .flatten()
         .filter(|node| node.gain > 0)
-        .map(|node| format!("{} = {}", node.slug, node.gain))
+        .map(|node| format!("{} = {}", node.slug, node.gain * 3))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -493,7 +493,21 @@ const BANDIT_DONORS: [&str; 3] = [
     "3k_dlc05_tech_bandit_network_bing_shangdang",
 ];
 
-const TIERS: [(i32, i32); 3] = [(25, 10), (75, 25), (150, 50)];
+const SECT_TIERS: [(i32, i32); 3] = [(25, 10), (75, 25), (150, 50)];
+const CULT_TIERS: [(i32, i32); 3] = [(10, 5), (25, 10), (50, 20)];
+
+fn influence_tiers(variant: Variant) -> [(i32, i32); 3] {
+    match variant {
+        Variant::Sect => SECT_TIERS,
+        Variant::Cult => CULT_TIERS,
+    }
+}
+
+pub fn influence_thresholds(variant: Variant) -> String {
+    influence_tiers(variant)
+        .map(|(threshold, _)| threshold.to_string())
+        .join(", ")
+}
 const TECH_TREE: &str = "ui/tech_trees/tech_tree.twui.xml";
 
 pub const BANDIT_TREE: &str = "ui/tech_trees/tech_tree_3k_dlc05_subculture_bandits.twui.xml";
@@ -598,14 +612,14 @@ pub fn write(
             if doctrine.gain > 0 {
                 junctions.push(
                     row! {"technology": name, "effect": format!("{key}_influence_growth"),
-                    "effect_scope": "faction_to_faction_own", "value": doctrine.gain},
+                    "effect_scope": "faction_to_faction_own", "value": doctrine.gain * 3},
                 );
             }
             let mut description = doctrine.description.to_owned();
             if doctrine.gain > 0 {
                 description.push_str(&format!(
-                    " Grants +{} Sect Influence each turn.",
-                    doctrine.gain
+                    " Grants +{} Sect Influence after research.",
+                    doctrine.gain * 3
                 ));
             }
             if let Some(extra) = match doctrine.slug {
@@ -656,9 +670,7 @@ pub fn write(
         path,
         &layout(&raw(source, path)?, key, config.variant, &donors)?,
     )?;
-    if !cult {
-        influence(game, pack, loc, config, key, &suffix)?;
-    }
+    influence(game, pack, loc, config, key, &suffix)?;
     Ok(())
 }
 
@@ -672,24 +684,41 @@ fn influence(
 ) -> Result<()> {
     let resource = format!("{key}_influence");
     let factor = format!("{key}_teachings");
+    let setbacks = format!("{key}_setbacks");
     let group = format!("{key}_influence_group");
     let member = format!("{group}_member");
     let mut effect = dummy_effect(game)?;
     set(&mut effect, "effect", format!("{key}_influence_growth"));
     let mut bundles = Vec::new();
     let mut tiers = Vec::new();
-    for (threshold, bonus) in TIERS {
+    let cult = config.variant == Variant::Cult;
+    let (name, income_effect, income_scope, income_label) = if cult {
+        (
+            "Cult Influence",
+            "3k_main_effect_force_all_campaign_loot_income",
+            "faction_to_character_own_unseen",
+            "settlement looting income",
+        )
+    } else {
+        (
+            "Sect Influence",
+            "3k_main_effect_economy_character_wealth_faction_background_income_mod",
+            "faction_to_faction_own",
+            "background income",
+        )
+    };
+    for (threshold, bonus) in influence_tiers(config.variant) {
         let id = format!("{resource}_{threshold}");
         bundles.push(bundle(&id));
-        tiers.push(row!{"effect_bundle_key": id, "effect_key": "3k_main_effect_economy_character_wealth_faction_background_income_mod",
-            "effect_scope": "faction_to_faction_own", "value": bonus, "advancement_stage": "start_turn_completed"});
+        tiers.push(row! {"effect_bundle_key": id, "effect_key": income_effect,
+        "effect_scope": income_scope, "value": bonus, "advancement_stage": "start_turn_completed"});
         loc.insert(
             format!("effect_bundles_localised_title_{id}"),
-            format!("Sect followers · {threshold}+ Influence"),
+            format!("{name} · {threshold}+"),
         );
         loc.insert(
             format!("effect_bundles_localised_description_{id}"),
-            format!("Donations provide +{bonus}% background income."),
+            format!("+{bonus}% {income_label}."),
         );
     }
     let territory = if config.sect_mode {
@@ -697,14 +726,45 @@ fn influence(
     } else {
         String::new()
     };
+    let description = if cult {
+        "Gain 5 Influence for each newly sacked commandery seat. Lose 1 each turn and 5 when a fence's contract expires. At 10 / 25 / 50 Influence, gain +5% / +10% / +20% settlement looting income."
+    } else {
+        "Gain 1 Influence per turn, with one-time gains from doctrines and chapters. Lose 6 if another faction captures one of your settlements, 10 if your patron falls, and 5 if households go without relief. At 25 / 75 / 150 Influence, gain +10% / +25% / +50% background income."
+    };
     loc.extend([
-        (format!("pooled_resources_display_name_{resource}"), "Sect Influence".into()),
-        (format!("pooled_resources_description_{resource}"), format!("Gain 2 Influence each turn, plus bonuses from doctrines and chapters. At 25 / 75 / 150 Influence, followers provide +10% / +25% / +50% background income.{territory}")),
-        (format!("pooled_resources_positive_factors_display_name_{resource}"), "New followers".into()),
-        (format!("pooled_resources_negative_factors_display_name_{resource}"), "Lost followers".into()),
-        (format!("pooled_resource_factors_display_name_positive_{factor}"), "Teachings and contacts".into()),
-        (format!("pooled_resource_factors_display_name_negative_{factor}"), "Teachings and contacts".into()),
-        (format!("effects_description_{key}_influence_growth"), "+%n Sect Influence per turn".into()),
+        (
+            format!("pooled_resources_display_name_{resource}"),
+            name.into(),
+        ),
+        (
+            format!("pooled_resources_description_{resource}"),
+            format!("{description}{territory}"),
+        ),
+        (
+            format!("pooled_resources_positive_factors_display_name_{resource}"),
+            "Influence gained".into(),
+        ),
+        (
+            format!("pooled_resources_negative_factors_display_name_{resource}"),
+            "Influence lost".into(),
+        ),
+        (
+            format!("pooled_resource_factors_display_name_positive_{factor}"),
+            if cult {
+                "Plunder"
+            } else {
+                "Teachings and chapters"
+            }
+            .into(),
+        ),
+        (
+            format!("pooled_resource_factors_display_name_negative_{setbacks}"),
+            "Setbacks".into(),
+        ),
+        (
+            format!("effects_description_{key}_influence_growth"),
+            "+%n Sect Influence on completion".into(),
+        ),
     ]);
     for (table, rows) in [
         (
@@ -715,13 +775,13 @@ fn influence(
                 "icon_path": "ui/campaign ui/effect_bundles/technology.png", "ui_value_scale_factor": 1.0, "income_policy": "ECONOMICS_UPDATE", "shared": false},
             ],
         ),
-        ("pooled_resource_factors", vec![row! {"key": factor}]),
+        ("pooled_resource_factors", vec![row! {"key": factor}, row! {"key": setbacks}]),
         (
             "pooled_resource_factor_junctions",
-            vec![
+            [factor, setbacks].map(|factor| {
                 row! {"key": format!("{factor}_junction"), "factor": factor, "resource": resource,
-                "minimum": -1000, "maximum": 1000, "ai_can_propose": false, "is_recurring_factor": false},
-            ],
+                "minimum": -1000, "maximum": 1000, "ai_can_propose": false, "is_recurring_factor": false}
+            }).to_vec(),
         ),
         ("campaign_groups", vec![row! {"id": group}]),
         (

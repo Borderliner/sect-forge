@@ -20,7 +20,7 @@ impl<'a> Sources<'a> {
         Self { game, trom }
     }
 
-    fn effective(&self, table: &str, keys: &[&str]) -> Result<Vec<Row>> {
+    pub(crate) fn effective(&self, table: &str, keys: &[&str]) -> Result<Vec<Row>> {
         let prefix = format!("db/{table}_tables/");
         let paths = |pack: &Pack| {
             let mut paths = pack

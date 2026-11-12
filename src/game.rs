@@ -21,6 +21,7 @@ use rpfm_lib::{
     schema::Schema,
 };
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
 mod traits;
 pub use traits::{Trait, TraitCategory};
@@ -161,6 +162,11 @@ pub fn add(pack: &mut Pack, path: &str, bytes: &[u8]) -> Result<()> {
 
 pub fn db_path(table: &str, suffix: &str) -> String {
     format!("db/{table}_tables/{suffix}")
+}
+
+pub(crate) fn record_id(key: &str) -> i32 {
+    let hash = Uuid::new_v5(&Uuid::NAMESPACE_URL, key.as_bytes());
+    i32::from_le_bytes(hash.as_bytes()[..4].try_into().unwrap()) & i32::MAX
 }
 
 fn decoded(pack: &Pack, path: &str) -> Result<RFileDecoded> {
@@ -348,6 +354,12 @@ mod tests {
             ("cdir_events_dilemma_choice_details", 2),
             ("cdir_events_dilemma_option_junctions", 0),
             ("cdir_events_dilemma_payloads", 0),
+            ("campaign_payload_ui_details", 2),
+            ("building_chains", 6),
+            ("building_chain_availability_set_ids", 0),
+            ("building_superchains", 2),
+            ("building_effects_junction", 5),
+            ("slot_template_to_building_superchain_junctions", 0),
         ] {
             add_rows(&mut pack, table, "fixture", vec![Row::new()])?;
             let mut file = pack

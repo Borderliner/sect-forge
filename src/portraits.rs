@@ -542,6 +542,9 @@ pub fn export(
                     .any(|path| path.contains("/stills/") && path.contains("/faces/"))
                 && has_transparent_armour(source, &donor, &art));
         if portrait.face_art == FaceArt::Layered || full_portrait {
+            if full_portrait {
+                blank_armour_layers(game, output, &root, element, is_male)?;
+            }
             export_face(
                 source,
                 output,
@@ -788,12 +791,16 @@ fn export_face(
                 .or_else(|| stills.get(alternate.as_str()))
                 .unwrap_or(default);
             let image = raw(source, path)?;
-            let target = match (standalone.is_some(), target == &large) {
-                (true, true) => format!("stills/{size}/large"),
-                (true, false) => format!("stills/{size}"),
-                (false, _) => target.to_owned(),
-            };
             add(output, &format!("{root}{target}/{card}.png"), &image)?;
+            if standalone.is_some() {
+                // Equipped characters also request layered stills, even for unique art sets.
+                let suffix = if target == &large { "/large" } else { "" };
+                add(
+                    output,
+                    &format!("{root}stills/{size}{suffix}/{card}.png"),
+                    &image,
+                )?;
+            }
         }
     }
     for (panel, size) in [
@@ -820,18 +827,17 @@ fn export_face(
                 .or_else(|| stills.get(still.as_str()))
                 .unwrap_or(default);
             let image = raw(source, path)?;
+            add(
+                output,
+                &format!("{root}composites/faces/{card}/{suffix}"),
+                &image,
+            )?;
             if standalone.is_some() {
                 let image = standalone_composite(&image, mood)
                     .with_context(|| format!("Prepare {panel} portrait from {path}"))?;
                 add(
                     output,
                     &format!("{root}composites/{panel}/{mood}/{mood}.png"),
-                    &image,
-                )?;
-            } else {
-                add(
-                    output,
-                    &format!("{root}composites/faces/{card}/{suffix}"),
                     &image,
                 )?;
             }
@@ -886,7 +892,7 @@ mod tests {
     use crate::export::row;
 
     #[test]
-    fn artwork_only_face_pack_supplies_stills_and_static_campaign_composites() -> Result<()> {
+    fn artwork_only_face_pack_supports_standalone_and_equipped_portraits() -> Result<()> {
         let mut game = game::new_pack("vanilla.pack");
         add_rows(
             &mut game,
@@ -906,6 +912,12 @@ mod tests {
                 "portrait": "earth/female/", "card": "vanilla_female",
                 "uniform": "3k_main_hero_skin_female_03",
             }],
+        )?;
+        let armour = "stills/unitcards/large/3k_main_ancillary_armour_strategist_light_armour_water_common_female.png";
+        add(
+            &mut game,
+            &format!("ui/characters/water_strategist/female/{armour}"),
+            b"vanilla armour artwork",
         )?;
         let mut composite = Vec::new();
         let mut encoder = png::Encoder::new(&mut composite, 1, 1);
@@ -967,12 +979,18 @@ mod tests {
         assert_eq!(field(&rows[0], "uniform"), "3k_main_hero_skin_female_03");
         assert_eq!(field(&rows[0], "fallback_composite_display"), "EMPTY");
         let root = "ui/characters/founder_portrait";
+        for folder in ["", "large/", "faces/", "faces/large/"] {
+            assert_eq!(
+                raw(
+                    &output,
+                    &format!("{root}/stills/unitcards/{folder}founder_portrait.png")
+                )?,
+                card
+            );
+        }
         assert_eq!(
-            raw(
-                &output,
-                &format!("{root}/stills/unitcards/large/founder_portrait.png")
-            )?,
-            card
+            raw(&output, &format!("{root}/{armour}"))?,
+            include_bytes!("data/blank.png")
         );
         let image = raw(
             &output,
@@ -1048,13 +1066,19 @@ mod tests {
             &[still, composite],
         )?;
 
-        assert_eq!(output.files().len(), PORTRAIT_STILLS.len() * 2 + 6);
-        assert!(output.files().keys().all(|path| !path.contains("/faces/")));
+        assert_eq!(output.files().len(), PORTRAIT_STILLS.len() * 4 + 12);
         let card = raw(
             &output,
             &format!("{root}stills/unitcards/founder_portrait.png"),
         )?;
         assert_eq!(card, portrait);
+        assert_eq!(
+            raw(
+                &output,
+                &format!("{root}composites/faces/founder_portrait/large_panel/norm/face.png"),
+            )?,
+            portrait
+        );
         let image = raw(
             &output,
             &format!("{root}composites/large_panel/happy/happy.png"),

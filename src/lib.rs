@@ -1,3 +1,4 @@
+mod buildings;
 mod caab;
 mod campaign_actions;
 pub mod config;

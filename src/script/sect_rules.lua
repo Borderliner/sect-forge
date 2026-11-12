@@ -1,7 +1,8 @@
--- Sect progression is faction-owned and survives migration and save/load.
+-- Influence is faction-owned and survives migration and save/load.
 local faction_key = "__FACTION_KEY__"
 local resource_key = faction_key .. "_influence"
 local factor_key = faction_key .. "_teachings"
+local setback_factor = faction_key .. "_setbacks"
 local doctrines = { __DOCTRINE_GAINS__ }
 local thresholds = { __INFLUENCE_TIERS__ }
 local starting_traits = { __STARTING_TRAITS__ }
@@ -18,6 +19,9 @@ local chapters_value = faction_key .. "_chapters"
 local assembly_key = faction_key .. "_assembly"
 local donations_key = faction_key .. "_assembly_donations"
 local dispatch_key = faction_key .. "_patron_dispatch"
+local relief_key = faction_key .. "_household_relief"
+local unfunded_relief_key = relief_key .. "_unfunded"
+local contacts_value = faction_key .. "_initial_contacts"
 local reconciliation_queued = false
 local placing_start = false
 
@@ -187,7 +191,10 @@ end
 local function add_influence(owner, amount)
     local resource = owner:pooled_resources():resource(resource_key)
     if resource:is_null_interface() then return end
-    cm:modify_model():get_modify_pooled_resource(resource):apply_transaction_to_factor(factor_key, amount)
+    amount = math.max(-resource:value(), amount)
+    if amount == 0 then return end
+    local factor = amount < 0 and setback_factor or factor_key
+    cm:modify_model():get_modify_pooled_resource(resource):apply_transaction_to_factor(factor, amount)
     update_influence_effects()
 end
 
@@ -196,6 +203,28 @@ local function current_patron()
     if not patron_key then return end
     local patron = cm:query_faction(patron_key)
     if patron and not patron:is_null_interface() and not patron:is_dead() then return patron end
+end
+
+local function establish_initial_contacts(owner)
+    if not owner:is_human() or cm:get_saved_value(contacts_value) then return end
+    local factions = cm:query_model():world():faction_list()
+    local met = owner:factions_met()
+    local known = {}
+    for i = 0, met:num_items() - 1 do known[met:item_at(i):name()] = true end
+    local envoy = cm:modify_faction(owner)
+    for i = 0, factions:num_items() - 1 do
+        local other = factions:item_at(i)
+        local key = other:name()
+        if key ~= faction_key and not known[key] and not other:is_dead() and not other:is_rebel()
+            and other:has_capital_region() then
+            -- Revealing the seat establishes contact through the campaign's visibility system.
+            envoy:make_region_visible_in_shroud(other:capital_region():name())
+        end
+    end
+    cm:set_saved_value(contacts_value, true)
+    cm:callback(function()
+        output("[SectForge] " .. faction_key .. " factions met=" .. owner:factions_met():num_items())
+    end, 1)
 end
 
 local function reconcile_base()
@@ -251,23 +280,37 @@ end
 
 local function grow_influence(context)
     reconcile_base()
-    if is_cult then return end
     local owner = context:faction()
     local turn = cm:query_model():turn_number()
     if cm:get_saved_value(growth_turn) == turn then return end
     local resource = owner:pooled_resources():resource(resource_key)
     if resource:is_null_interface() then return end
-    local gain = 2 + (cm:get_saved_value(chapters_value) or 0)
-    for doctrine, amount in pairs(doctrines) do
-        if owner:has_technology(faction_key .. "_" .. doctrine) then gain = gain + amount end
-    end
     cm:set_saved_value(growth_turn, turn)
+    if is_cult then
+        add_influence(owner, -1)
+        return
+    end
+    local gain = 1
+    for doctrine, amount in pairs(doctrines) do
+        local technology = faction_key .. "_" .. doctrine
+        local reward = technology .. "_influence_awarded"
+        if owner:has_technology(technology) and not cm:get_saved_value(reward) then
+            cm:set_saved_value(reward, true)
+            gain = gain + amount
+        end
+    end
+    if cm:get_saved_value(faction_key .. "_patron") and not current_patron() then
+        cm:set_saved_value(faction_key .. "_patron", false)
+        add_influence(owner, -10)
+    end
     add_influence(owner, gain)
     if owner:is_human() and turn % 6 == 4 then
         local dispatch = turn % 12 == 10 and owner:has_technology(faction_key .. "_patrons")
             and owner:treasury() >= 1500 and current_patron()
         local can_endow = owner:treasury() >= 1000 and (cm:get_saved_value(chapters_value) or 0) < 5
         cm:trigger_dilemma(faction_key, dispatch and dispatch_key or can_endow and assembly_key or donations_key, true)
+    elseif owner:is_human() and turn % 10 == 5 and resource:value() >= 5 then
+        cm:trigger_dilemma(faction_key, owner:treasury() >= 600 and relief_key or unfunded_relief_key, true)
     end
     output("[SectForge] " .. faction_key .. " influence=" .. resource:value() .. " gain=" .. gain)
 end
@@ -277,8 +320,8 @@ cm:add_first_tick_callback(function()
     if not owner or owner:is_null_interface() or owner:is_dead() then return end
     if cm:is_new_game() and starting_region == hepu then prepare_opening_army(owner) end
     reconcile_base()
-    if is_cult then return end
     update_influence_effects()
+    if not is_cult then establish_initial_contacts(owner) end
     -- Reloading the opening turn must not grant Influence a second time.
     if not cm:get_saved_value(growth_turn) then
         cm:set_saved_value(growth_turn, cm:query_model():turn_number())
@@ -306,16 +349,41 @@ core:add_listener(faction_key .. "_followers", "FactionTurnStart",
     function(context) return context:faction():name() == faction_key end,
     grow_influence, true)
 
-if not is_cult then
+if is_cult then
+    core:add_listener(faction_key .. "_raid_reputation", faction_key .. "_raid_completed", true,
+        function() add_influence(faction(), 5) end, true)
+    core:add_listener(faction_key .. "_contract_reputation", faction_key .. "_contract_expired", true,
+        function() add_influence(faction(), -5) end, true)
+else
+    core:add_listener(faction_key .. "_lost_settlement", "RegionOwnershipChanged",
+        function(context)
+            local previous, next_owner = context:previous_owner(), context:new_owner()
+            return not placing_start and previous and not previous:is_null_interface() and previous:name() == faction_key
+                and next_owner and not next_owner:is_null_interface() and next_owner:name() ~= faction_key
+                and not next_owner:is_rebel()
+        end,
+        function(context) add_influence(context:previous_owner(), -6) end, true)
+
     core:add_listener(faction_key .. "_household_choices", "DilemmaChoiceMadeEvent",
         function(context)
+            local dilemma = context:dilemma()
             return context:faction():name() == faction_key
-                and (context:dilemma() == assembly_key or context:dilemma() == donations_key or context:dilemma() == dispatch_key)
+                and (dilemma == assembly_key or dilemma == donations_key or dilemma == dispatch_key
+                    or dilemma == relief_key or dilemma == unfunded_relief_key)
         end,
         function(context)
             local owner = context:faction()
             local treasury = cm:modify_faction(owner)
-            if context:dilemma() == dispatch_key then
+            local dilemma = context:dilemma()
+            if dilemma == relief_key or dilemma == unfunded_relief_key then
+                if dilemma == relief_key and context:choice() == 0 and owner:treasury() >= 600 then
+                    treasury:decrease_treasury(600)
+                else
+                    add_influence(owner, -5)
+                end
+                return
+            end
+            if dilemma == dispatch_key then
                 local patron = current_patron()
                 if context:choice() == 0 and patron and owner:treasury() >= 1500 then
                     treasury:decrease_treasury(1500)
@@ -325,7 +393,7 @@ if not is_cult then
             end
             if context:choice() == 0 then
                 treasury:increase_treasury(900)
-            elseif context:choice() == 1 and context:dilemma() == assembly_key then
+            elseif context:choice() == 1 and dilemma == assembly_key then
                 local chapters = cm:get_saved_value(chapters_value) or 0
                 if chapters < 5 and owner:treasury() >= 1000 then
                     treasury:decrease_treasury(1000)

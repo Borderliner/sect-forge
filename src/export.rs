@@ -9,7 +9,7 @@ use rpfm_lib::files::{Container, pack::Pack};
 use serde_json::Value;
 
 use crate::{
-    campaign_actions,
+    buildings, campaign_actions,
     config::{ANCILLARIES, BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, SLOTS, Variant},
     doctrines,
     game::{self, Game, Localization, Row, add, add_loc, add_rows, db_path, field, raw, rows, set},
@@ -170,7 +170,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     )?;
     let mut loc = localization(&config, &key);
     variant(&game.pack, &mut pack, &mut loc, &config, &key)?;
-    campaign_actions::write(&mut pack, &mut loc, config.variant, &key)?;
+    campaign_actions::write(&game.pack, &mut pack, &mut loc, config.variant, &key)?;
     doctrines::write(
         &game.pack,
         trom_pack.as_ref(),
@@ -180,6 +180,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         &key,
     )?;
     unlocks::write_buildings(&unlocks, &mut pack, &mut loc, &config, &key)?;
+    buildings::write(&unlocks, &mut pack, &mut loc, &config, &key)?;
     if !cult {
         if let Some(trom) = &trom_pack {
             add(
@@ -202,6 +203,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     game::save(&mut pack, &staged)?;
     let saved = game::open_pack(&staged)?;
     verify(&pack, &saved)?;
+    buildings::verify_availability(&saved)?;
     drop(saved);
     let published = output.join(&filename);
     // The staged file and output are on the same volume.
@@ -766,6 +768,7 @@ fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
         .join(", ");
     let mut rules = include_str!("script/sect_rules.lua").to_owned();
     let gains = doctrines::gains(config.variant);
+    let tiers = doctrines::influence_thresholds(config.variant);
     for (marker, value) in [
         ("__FACTION_KEY__", key),
         ("__STARTING_TRAITS__", traits.as_str()),
@@ -789,7 +792,7 @@ fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
             },
         ),
         ("__DOCTRINE_GAINS__", gains.as_str()),
-        ("__INFLUENCE_TIERS__", "25, 75, 150"),
+        ("__INFLUENCE_TIERS__", tiers.as_str()),
     ] {
         rules = rules.replace(marker, value);
     }

@@ -72,6 +72,7 @@ local function record_sack(region)
     total = total + 1
     cm:set_saved_value(already_sacked, true)
     cm:set_saved_value(sack_count, total)
+    core:trigger_event(faction_key .. "_raid_completed")
     local owner = cm:query_faction(faction_key)
     local loot = 0
     if owner:has_technology(faction_key .. "_ransom_ledgers") then loot = loot + 500 end
@@ -117,6 +118,7 @@ if is_cult then
             local deadline = cm:get_saved_value(contract_until) or 0
             if deadline > 0 and turn > deadline then
                 cm:set_saved_value(contract_until, 0)
+                core:trigger_event(faction_key .. "_contract_expired")
                 if context:faction():has_effect_bundle(heat_key) then
                     cm:remove_effect_bundle(heat_key, faction_key)
                 end

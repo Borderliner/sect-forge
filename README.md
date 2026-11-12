@@ -49,9 +49,11 @@ Workshop packs can be found by filename or ID, or opened directly from disk. Com
 | **24 reforms** across community, defence, and patronage. | **24 additional reforms** across raiding, recruitment, and stronghold development. |
 | **Victory** when your chosen patron claims an imperial throne. | **Victory** after using **Sack and Withdraw** in 30 distinct commandery cities. |
 
-For a **Sect**, choose a patron through a standalone **Make regular payments** deal. Household assemblies can fund up to five chapters. The highest reached Influence threshold of 25, 75, or 150 grants +10%, +25%, or +50% background income.
+For a **Sect**, envoys reveal the seats of active factions at the start. Choose a patron through a standalone **Make regular payments** deal. Gain 1 Influence per turn and earn one-time boosts from research and up to five chapters. Losing a settlement or a patron costs Influence. When households need relief, you can spend 600 to keep their support. At 25, 75, and 150 Influence, donations grant +10%, +25%, and +50% background income.
 
-For a **Cult**, Market Fences can offer a contract after your first sack. Sack a new commandery seat within five turns to earn its payout. Your armies lose campaign movement while the contract is open.
+For a **Cult**, each new sack earns 5 Influence. Lose 1 per turn and 5 when a fence's contract expires. At 10, 25, and 50 Influence, gain +5%, +10%, and +20% settlement looting income. Market Fences can offer a five-turn contract after your first sack. Your armies lose campaign movement while the contract is open.
+
+Sects can upgrade a **Meeting Hall** for public order and peasantry income. Cults can upgrade a **Fences' Den** for banditry income and supply stockpiles. In TROM, build a **Wayside Shrine** or **Hidden Stash** in the attachment slot of an owned minor settlement.
 
 ### Sect Mode
 
