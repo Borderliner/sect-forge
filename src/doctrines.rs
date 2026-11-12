@@ -1127,7 +1127,7 @@ fn add_sect_backdrop(root: &mut Element, faction: &str) -> Result<()> {
     let hierarchy = root
         .get_mut_child("hierarchy")
         .context("Missing research hierarchy")?;
-    let panel = find_mut(hierarchy, "tech_tree_component").context("Missing research tree")?;
+    let panel = find_mut(hierarchy, "tech_tree").context("Missing research panel")?;
     let mut backdrop = Element::new("sect_forge_reform_backdrop");
     backdrop.attributes.insert("this".into(), COMPONENT.into());
     panel.children.insert(0, XMLNode::Element(backdrop));
