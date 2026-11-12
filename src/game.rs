@@ -358,6 +358,7 @@ mod tests {
             ("building_chains", 6),
             ("building_chain_availability_set_ids", 0),
             ("building_superchains", 2),
+            ("building_ui_groups_to_superchains", 0),
             ("building_effects_junction", 5),
             ("slot_template_to_building_superchain_junctions", 0),
         ] {

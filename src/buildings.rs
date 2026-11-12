@@ -84,7 +84,7 @@ pub fn write(
     Ok(())
 }
 
-pub fn verify_availability(pack: &Pack) -> Result<()> {
+pub fn verify(pack: &Pack) -> Result<()> {
     let records = |table| -> Result<Vec<Row>> {
         let prefix = format!("db/{table}_tables/");
         let mut records = Vec::new();
@@ -100,6 +100,18 @@ pub fn verify_availability(pack: &Pack) -> Result<()> {
         ensure!(
             registered.contains(id),
             "Unregistered building availability set {id}"
+        );
+    }
+    let menu_groups = records("building_ui_groups_to_superchains")?;
+    let visible: BTreeSet<_> = menu_groups
+        .iter()
+        .map(|row| field(row, "building_superchain"))
+        .collect();
+    for row in records("building_superchains")? {
+        let superchain = field(&row, "key");
+        ensure!(
+            visible.contains(superchain),
+            "No construction menu group for {superchain}"
         );
     }
     Ok(())
@@ -140,6 +152,22 @@ fn write_chain(
         chain.donor
     );
     add_rows(pack, slot_table, &id, slot_templates)?;
+    let menu_table = "building_ui_groups_to_superchains";
+    let menu_groups = source
+        .effective(menu_table, &["building_superchain", "building_ui_group"])?
+        .into_iter()
+        .filter(|row| field(row, "building_superchain") == donor_superchain)
+        .map(|mut row| {
+            set(&mut row, "building_superchain", id.as_str());
+            row
+        })
+        .collect::<Vec<_>>();
+    ensure!(
+        !menu_groups.is_empty(),
+        "No construction menu group for {}",
+        chain.donor
+    );
+    add_rows(pack, menu_table, &id, menu_groups)?;
     set(&mut chain_row, "key", id.as_str());
     set(&mut chain_row, "building_superchain", id.as_str());
     set(&mut superchain, "key", id.as_str());
@@ -329,7 +357,7 @@ mod tests {
             "fixture",
             vec![row! {"id": "custom_set", "building_chain": "custom_hall"}],
         )?;
-        let error = verify_availability(&pack).unwrap_err();
+        let error = verify(&pack).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -341,6 +369,32 @@ mod tests {
             "fixture",
             vec![row! {"id": "custom_set"}],
         )?;
-        verify_availability(&pack)
+        verify(&pack)
+    }
+
+    #[test]
+    fn building_superchain_requires_a_construction_menu_group() -> Result<()> {
+        let mut pack = new_pack("fixture.pack");
+        add_rows(
+            &mut pack,
+            "building_superchains",
+            "fixture",
+            vec![row! {"key": "custom_hall"}],
+        )?;
+        let error = verify(&pack).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("No construction menu group for custom_hall")
+        );
+        add_rows(
+            &mut pack,
+            "building_ui_groups_to_superchains",
+            "fixture",
+            vec![row! {
+                "building_superchain": "custom_hall", "building_ui_group": "3k_main_ui_building_group_district_government"
+            }],
+        )?;
+        verify(&pack)
     }
 }

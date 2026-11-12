@@ -203,7 +203,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     game::save(&mut pack, &staged)?;
     let saved = game::open_pack(&staged)?;
     verify(&pack, &saved)?;
-    buildings::verify_availability(&saved)?;
+    buildings::verify(&saved)?;
     drop(saved);
     let published = output.join(&filename);
     // The staged file and output are on the same volume.
