@@ -181,6 +181,9 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     )?;
     unlocks::write_buildings(&unlocks, &mut pack, &mut loc, &config, &key)?;
     buildings::write(&unlocks, &mut pack, &mut loc, &config, &key)?;
+    if let Some(trom) = &trom_pack {
+        trom::write_supplies_tooltips(&game.pack, trom, &mut pack, &key)?;
+    }
     if !cult {
         if let Some(trom) = &trom_pack {
             add(

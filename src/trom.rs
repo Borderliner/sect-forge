@@ -12,6 +12,9 @@ use crate::{
 };
 
 mod settlement;
+mod supplies;
+
+pub use supplies::write_tooltips as write_supplies_tooltips;
 
 const MARKER: usize = 60442;
 const DORMANT: &str = "3k_main_faction_wuwei";
