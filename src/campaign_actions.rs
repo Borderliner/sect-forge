@@ -34,11 +34,27 @@ const SECT: &[Dilemma] = &[
             choice("Collect donations", "Add 900 to your treasury."),
             choice(
                 "Endow a chapter",
-                "Pay 1,000 to establish a chapter and gain 6 Influence. You can endow up to five chapters.",
+                "Pay 1,000 to gain 6 Influence now and +1 Influence every three turns from this chapter. Maximum five chapters.",
             ),
             choice(
                 "Close the assembly",
                 "Leave the offerings with the households.",
+            ),
+        ],
+    },
+    Dilemma {
+        slug: "choose_patron",
+        title: "Choose a Patron",
+        description: "A warlord has accepted your offer of regular payments. You may sponsor the recipient of that offer. If your chosen patron becomes Emperor or Empress, your sect wins the campaign.",
+        image: "3k_event_diplomacy_neutral",
+        choices: &[
+            choice(
+                "Sponsor this warlord",
+                "Name the recipient of the payment agreement as your sole patron, replacing any previous patron.",
+            ),
+            choice(
+                "Keep the payment agreement only",
+                "Leave your patronage unchanged.",
             ),
         ],
     },
@@ -67,7 +83,7 @@ const SECT: &[Dilemma] = &[
             ),
             choice(
                 "Retain the treasury",
-                "Continue the existing diplomatic payment agreement.",
+                "Decline the additional contribution.",
             ),
         ],
     },

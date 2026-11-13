@@ -76,16 +76,25 @@ fn han_tier(technology: &str) -> Option<usize> {
 }
 
 fn recruitment_tech(key: &str, variant: Variant, gate: &str, unit: &str) -> Option<String> {
-    let tier = han_tier(gate)?;
-    let index = match tier {
-        0 => 1,
-        1 => 2,
-        2 if unit.contains("cavalry") || unit.contains("archer") => 4,
-        2 => 3,
-        _ if unit.contains("dragon") || unit.contains("imperial") => 7,
-        _ => 5,
+    Some(unit_reform(key, variant, han_tier(gate)?, unit))
+}
+
+fn unit_reform(key: &str, variant: Variant, tier: usize, unit: &str) -> String {
+    let mounted = unit.contains("cavalry") || unit.contains("horse") || unit.contains("_lancer");
+    let ranged = unit.contains("archer") || unit.contains("crossbow") || unit.contains("trebuchet");
+    let index = match (tier, mounted, ranged) {
+        (0 | 1, true, _) => 2,
+        (0 | 1, _, true) => 4,
+        (0, _, _) => 1,
+        (1, _, _) => 3,
+        (2, true, _) => 6,
+        (2, _, true) => 8,
+        (2, _, _) => 5,
+        (_, true, _) => 9,
+        (_, _, true) => 11,
+        _ => 10,
     };
-    Some(tech(key, variant, 1, index))
+    tech(key, variant, 1, index)
 }
 
 struct BanditRecruit {
@@ -204,21 +213,16 @@ pub fn write_recruitment(
             && config.sect_mode
             && permission == "hv_permission_elite_basic"
         {
-            let reform = match field(original, "ceo") {
-                "hv_ceo_faction_rank_unlock_advanced"
-                    if unit.contains("cavalry") || unit.contains("bow") =>
-                {
-                    4
-                }
-                "hv_ceo_faction_rank_unlock_advanced" => 3,
-                "hv_ceo_faction_rank_unlock_elite" => 5,
+            let tier = match field(original, "ceo") {
+                "hv_ceo_faction_rank_unlock_advanced" => 2,
+                "hv_ceo_faction_rank_unlock_elite" => 3,
                 _ => continue,
             };
             set(&mut alternative, "ceo", "");
             set(
                 &mut alternative,
                 "tech1",
-                tech(key, config.variant, 1, reform),
+                unit_reform(key, config.variant, tier, unit),
             );
         } else if config.variant == Variant::Cult
             && matches!(
@@ -361,7 +365,6 @@ fn write_supply(
     }
     let suffix = format!("{key}_supply");
     let supplied = |original: &str| format!("{key}_supply_{original}");
-    let supply_tech = tech(key, config.variant, 2, 6);
     let mut levels = Vec::new();
     let mut gates = Vec::new();
     for (name, original) in &originals {
@@ -376,7 +379,9 @@ fn write_supply(
         if !field(original, "resource_requirement").is_empty() {
             set(&mut level, "resource_requirement", "");
         }
-        gates.push(row! {"building_level_key": id, "technology_key": supply_tech});
+        let tier = original["level"].as_i64().unwrap_or_default();
+        let reform = building_tech(key, config.variant, field(original, "chain"), tier);
+        gates.push(row! {"building_level_key": id, "technology_key": reform});
         levels.push(level);
     }
     add_rows(pack, "building_levels", &suffix, levels)?;

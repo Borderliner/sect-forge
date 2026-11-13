@@ -355,9 +355,14 @@ impl<'a> Edit<'a> {
     }
 
     pub fn replace_text(&mut self, node: &Node, value: &str) {
+        let bytes = self.text_reference(value);
+        self.replace(node, bytes);
+    }
+
+    pub fn text_reference(&mut self, value: &str) -> Vec<u8> {
         let mut bytes = vec![TEXT];
         bytes.extend(self.text_id(value).to_le_bytes());
-        self.replace(node, bytes);
+        bytes
     }
 
     pub fn append(&mut self, array: &Node, bytes: Vec<u8>) {

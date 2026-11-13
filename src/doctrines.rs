@@ -186,7 +186,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "wardens",
             "Sanctuary Wardens",
-            "Teach household guards to defend routes and settlements.",
+            "Train early mounted recruits to defend routes and settlements.",
             0,
             REPLENISH,
             2,
@@ -194,7 +194,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "retinue_drills",
             "Retinue Drills",
-            "Standardise training for dedicated infantry and cavalry.",
+            "Train professional infantry for the sect's retinues.",
             0,
             SUPPLIES,
             5,
@@ -202,7 +202,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "quartermasters",
             "Quartermaster Registers",
-            "Stock district armouries and train their keepers.",
+            "Stock district armouries and train early ranged recruits.",
             0,
             RECRUIT,
             -5,
@@ -210,7 +210,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "veteran_companies",
             "Veteran Companies",
-            "Organise veteran companies around experienced officers.",
+            "Organise veteran infantry around experienced officers.",
             0,
             REPLENISH,
             3,
@@ -218,7 +218,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "sanctuary_armouries",
             "Sanctuary Armouries",
-            "Maintain advanced equipment and guarded supply convoys.",
+            "Equip veteran mounted troops and guard supply convoys.",
             0,
             SUPPLIES,
             7,
@@ -234,7 +234,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "veteran_instructors",
             "Veteran Instructors",
-            "Assign veterans to train new recruits before they march.",
+            "Train veteran ranged troops and siege crews.",
             0,
             RECRUIT,
             -4,
@@ -242,7 +242,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "route_wardens",
             "Route Wardens",
-            "Escort supply caravans through stretches of exposed road.",
+            "Train elite mounted troops to escort caravans and defend the sect.",
             0,
             SUPPLIES,
             3,
@@ -250,7 +250,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "reserve_musters",
             "Reserve Musters",
-            "Maintain a trained reserve that can reinforce retinues.",
+            "Train elite infantry to reinforce retinues.",
             0,
             REPLENISH,
             3,
@@ -258,7 +258,7 @@ const SECT: [[Doctrine; 12]; 3] = [
         reform(
             "beacon_routes",
             "Beacon Routes",
-            "Use relay beacons to warn nearby garrisons of raids.",
+            "Train elite ranged troops and siege crews to support the sect.",
             0,
             MOVE,
             3,
@@ -699,10 +699,44 @@ const BANDIT_DONORS: [&str; 3] = [
     "3k_dlc05_tech_bandit_network_bing_shangdang",
 ];
 
-const SECT_TIERS: [(i32, i32); 3] = [(25, 10), (75, 25), (150, 50)];
-const CULT_TIERS: [(i32, i32); 3] = [(10, 5), (25, 10), (50, 20)];
+struct InfluenceTier {
+    threshold: i32,
+    income: i32,
+    diplomacy: i32,
+    satisfaction: i32,
+    prestige: i32,
+}
 
-fn influence_tiers(variant: Variant) -> [(i32, i32); 3] {
+const fn tier(
+    threshold: i32,
+    income: i32,
+    diplomacy: i32,
+    satisfaction: i32,
+    prestige: i32,
+) -> InfluenceTier {
+    InfluenceTier {
+        threshold,
+        income,
+        diplomacy,
+        satisfaction,
+        prestige,
+    }
+}
+
+const SECT_TIERS: &[InfluenceTier] = &[
+    tier(25, 20, 5, 2, 15),
+    tier(75, 40, 10, 5, 40),
+    tier(150, 65, 20, 8, 85),
+    tier(225, 85, 30, 12, 140),
+    tier(300, 100, 40, 16, 200),
+];
+const CULT_TIERS: &[InfluenceTier] = &[
+    tier(10, 5, 0, 0, 0),
+    tier(25, 10, 0, 0, 0),
+    tier(50, 20, 0, 0, 0),
+];
+
+fn influence_tiers(variant: Variant) -> &'static [InfluenceTier] {
     match variant {
         Variant::Sect => SECT_TIERS,
         Variant::Cult => CULT_TIERS,
@@ -711,8 +745,92 @@ fn influence_tiers(variant: Variant) -> [(i32, i32); 3] {
 
 pub fn influence_thresholds(variant: Variant) -> String {
     influence_tiers(variant)
-        .map(|(threshold, _)| threshold.to_string())
+        .iter()
+        .map(|tier| tier.threshold.to_string())
+        .collect::<Vec<_>>()
         .join(", ")
+}
+
+pub fn influence_cap(variant: Variant) -> i32 {
+    influence_tiers(variant).last().unwrap().threshold
+}
+
+fn write_extended_progression(
+    game: &Pack,
+    trom: Option<&Pack>,
+    pack: &mut Pack,
+    group: &str,
+) -> Result<()> {
+    const PATH: &str = "script/campaign/_shared/3k_campaign_progression_extended.lua";
+    let source = trom
+        .filter(|source| source.file(PATH, false).is_some())
+        .unwrap_or(game);
+    let script = String::from_utf8(raw(source, PATH)?)?;
+    // Match the native fallback arrays to the four ranks in the sect's DB group.
+    let anchor = "local function get_progression_data(faction_key)";
+    anyhow::ensure!(
+        script.matches(anchor).count() == 1,
+        "Unsupported extended progression script"
+    );
+    let script = script.replace(anchor, &format!(
+        "point_groups[\"{group}\"] = {{unpack(point_groups.default, 1, 4)}}\n\
+         default_points_distribution[\"{group}\"] = {{unpack(default_points_distribution.default, 1, 4)}}\n\
+         progression_datas[\"{group}\"] = {{points_group_key = \"{group}\", default_distribution_key = \"{group}\", ai_personality_key = \"balanced\", effects_group_key = \"default\"}}\n\n{anchor}"
+    ));
+    add(pack, PATH, script.as_bytes())
+}
+
+fn sect_progression(game: &Pack, trom: Option<&Pack>, pack: &mut Pack, key: &str) -> Result<()> {
+    const HAN: &str = "3k_main_progression_level_group_han_empire_chinese";
+    let group = format!("{key}_progression");
+    let member = format!("{group}_member");
+    let mut ranks = rows(game, "campaign_progression_level_group_progression_levels")?
+        .into_iter()
+        .filter(|row| field(row, "progression_level_group") == HAN)
+        .collect::<Vec<_>>();
+    ranks.sort_by_key(|row| row["progression_level"].as_i64());
+    anyhow::ensure!(
+        ranks.len() >= 4
+            && ranks.iter().take(4).enumerate().all(|(i, row)| {
+                field(row, "progression_level_details") == format!("3k_main_han_chinese_{}", i + 1)
+            }),
+        "Unexpected Han rank progression"
+    );
+    // Keep the four Han ranks through Duke/Duchess.
+    ranks.retain(|row| {
+        row["progression_level"]
+            .as_i64()
+            .is_some_and(|rank| rank <= 4)
+    });
+    for rank in &mut ranks {
+        set(rank, "progression_level_group", group.as_str());
+        if field(rank, "progression_level_details") == "3k_main_han_chinese_4" {
+            set(rank, "prestige_threshold", 200);
+        }
+    }
+    for (table, records) in [
+        ("campaign_groups", vec![row! {"id": group}]),
+        (
+            "campaign_group_members",
+            vec![row! {"id": member, "group": group, "priority": 100.0}],
+        ),
+        (
+            "campaign_group_member_criteria_factions",
+            vec![row! {"member": member, "faction": key, "context": "owner"}],
+        ),
+        (
+            "campaign_progression_level_groups",
+            vec![row! {"key": group}],
+        ),
+        (
+            "campaign_progression_levels",
+            vec![row! {"campaign_group": group, "progression_level_group": group}],
+        ),
+        ("campaign_progression_level_group_progression_levels", ranks),
+    ] {
+        add_rows(pack, table, &group, records)?;
+    }
+    write_extended_progression(game, trom, pack, &group)
 }
 const TECH_TREE: &str = "ui/tech_trees/tech_tree.twui.xml";
 
@@ -730,6 +848,7 @@ pub fn write(
     let suffix = format!("{key}_doctrines");
     let cult = config.variant == Variant::Cult;
     if !cult {
+        sect_progression(game, trom, pack, key)?;
         let sets = rows(game, "technology_node_sets")?
             .into_iter()
             .filter(|row| {
@@ -929,18 +1048,51 @@ fn influence(
             "background income",
         )
     };
-    for (threshold, bonus) in influence_tiers(config.variant) {
+    let maximum = influence_cap(config.variant);
+    let mut tier_descriptions = Vec::new();
+    for tier in influence_tiers(config.variant) {
+        let threshold = tier.threshold;
+        let bonus = tier.income;
         let id = format!("{resource}_{threshold}");
         bundles.push(bundle(&id));
-        tiers.push(row! {"effect_bundle_key": id, "effect_key": income_effect,
-        "effect_scope": income_scope, "value": bonus, "advancement_stage": "start_turn_completed"});
+        let mut description = format!("+{bonus}% {income_label}");
+        for (effect, scope, value) in [
+            (income_effect, income_scope, bonus),
+            (
+                "3k_main_faction_diplomacy_mod",
+                "faction_to_faction_own_unseen",
+                tier.diplomacy,
+            ),
+            (
+                "3k_main_effect_characters_satisfaction",
+                "faction_to_character_own_unseen",
+                tier.satisfaction,
+            ),
+            (
+                "3k_main_effect_campaign_progression_han_empire",
+                "faction_to_faction_own_unseen",
+                tier.prestige,
+            ),
+        ] {
+            if value != 0 {
+                tiers.push(row! {"effect_bundle_key": id, "effect_key": effect,
+                    "effect_scope": scope, "value": value, "advancement_stage": "start_turn_completed"});
+            }
+        }
+        if !cult {
+            description.push_str(&format!(
+                ", +{} diplomacy with all factions, +{} faction-wide satisfaction, +{} prestige",
+                tier.diplomacy, tier.satisfaction, tier.prestige
+            ));
+        }
+        tier_descriptions.push(format!("{threshold}: {description}"));
         loc.insert(
             format!("effect_bundles_localised_title_{id}"),
             format!("{name} · {threshold}+"),
         );
         loc.insert(
             format!("effect_bundles_localised_description_{id}"),
-            format!("+{bonus}% {income_label}."),
+            format!("{description}."),
         );
     }
     let territory = if config.sect_mode {
@@ -949,9 +1101,9 @@ fn influence(
         String::new()
     };
     let description = if cult {
-        "Gain 5 Influence for each newly sacked commandery seat. Lose 1 each turn and 5 when a fence's contract expires. At 10 / 25 / 50 Influence, gain +5% / +10% / +20% settlement looting income."
+        "Gain 5 Influence for each newly sacked commandery seat. Lose 1 each turn and 5 when a fence's contract expires."
     } else {
-        "Gain 1 Influence per turn, plus income from Meeting Halls and one-time gains from doctrines and chapters. Lose 6 if another faction captures one of your settlements, 10 if your patron falls, and 5 if households go without relief. At 25 / 75 / 150 Influence, gain +10% / +25% / +50% background income."
+        "Gain 1 Influence per turn, plus Influence from Meeting Halls, chapters and doctrines. Lose 6 if another faction captures one of your settlements, 10 if your patron falls, and 5 if households go without relief."
     };
     loc.extend([
         (
@@ -960,7 +1112,10 @@ fn influence(
         ),
         (
             format!("pooled_resources_description_{resource}"),
-            format!("{description}{territory}"),
+            format!(
+                "{description}\n\nInfluence benefits\n{}{territory}",
+                tier_descriptions.join("\n")
+            ),
         ),
         (
             format!("pooled_resources_positive_factors_display_name_{resource}"),
@@ -993,7 +1148,7 @@ fn influence(
             "pooled_resources",
             vec![
                 row! {"key": resource, "default_factor": factor, "persistent_factors": false,
-                "ai_ignored": false, "minimum": 0, "maximum": 1000, "overflow_behaviour": "DISCARD", "reset_policy": "NONE",
+                "ai_ignored": false, "minimum": 0, "maximum": maximum, "overflow_behaviour": "DISCARD", "reset_policy": "NONE",
                 "icon_path": "ui/campaign ui/effect_bundles/technology.png", "ui_value_scale_factor": 1.0, "income_policy": "ECONOMICS_UPDATE", "shared": false},
             ],
         ),
@@ -1002,7 +1157,7 @@ fn influence(
             "pooled_resource_factor_junctions",
             [factor, setbacks].map(|factor| {
                 row! {"key": format!("{factor}_junction"), "factor": factor, "resource": resource,
-                "minimum": -1000, "maximum": 1000, "ai_can_propose": false, "is_recurring_factor": false}
+                "minimum": -maximum, "maximum": maximum, "ai_can_propose": false, "is_recurring_factor": false}
             }).to_vec(),
         ),
         ("campaign_groups", vec![row! {"id": group}]),

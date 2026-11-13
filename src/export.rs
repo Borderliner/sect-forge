@@ -21,7 +21,7 @@ use crate::{
 const BANDIT: &str = "3k_main_faction_zhang_yan";
 const CLASS_TABLE: &str = "character_generation_template_game_mode_details";
 pub const TERRITORY: &str = "Hold one commandery. Taking a settlement in another moves your base and abandons the old holdings.";
-const PATRON: &str = "Choose your patron in diplomacy with a standalone offer of regular payments.";
+const PATRON: &str = "To choose a patron, negotiate with a warlord in Diplomacy. Under Trade and Marriage, choose Make Regular Payments as the only term. After the warlord accepts, confirm the sponsorship in the Choose a Patron event on your next turn.";
 const TABLES: [(&str, &str); 19] = [
     ("factions", "key"),
     ("names", "id"),
@@ -700,10 +700,33 @@ fn variant(
     let title = match config.variant {
         Variant::Sect => {
             loc.extend([
-                (format!("event_feed_strings_text_{key}_patron_title"), "Patron chosen".into()),
-                (format!("event_feed_strings_text_{key}_patron_detail"), "Your payment agreement has pledged your support.".into()),
-                (format!("event_feed_strings_text_{key}_patron_body"), "You will win if this warlord claims an imperial throne. A standalone offer of regular payments to another eligible warlord will switch your patron.".into()),
+                (
+                    format!("event_feed_strings_text_{key}_patron_title"),
+                    "Patron chosen".into(),
+                ),
+                (
+                    format!("event_feed_strings_text_{key}_patron_detail"),
+                    "Your sect has pledged its support.".into(),
+                ),
+                (
+                    format!("event_feed_strings_text_{key}_patron_body"),
+                    format!("You will win if this warlord becomes Emperor or Empress. {PATRON}"),
+                ),
+                (
+                    format!("event_feed_strings_text_{key}_chapter_title"),
+                    "A New Chapter".into(),
+                ),
+                (
+                    format!("event_feed_strings_text_{key}_chapter_body"),
+                    "Each endowed chapter contributes 1 Influence every three turns.".into(),
+                ),
             ]);
+            for count in 1..=5 {
+                loc.insert(
+                    format!("event_feed_strings_text_{key}_chapter_{count}"),
+                    format!("{count} of 5 chapters endowed."),
+                );
+            }
             "Crown a Warlord"
         }
         Variant::Cult => {
@@ -766,9 +789,11 @@ fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
         .iter()
         .filter_map(|(slot, _)| {
             config.starting_ancillaries.get(*slot).map(|key| {
+                let item = &ANCILLARIES[key];
+                let permission = item.permission.as_deref().unwrap_or("");
                 format!(
-                    "{{\"{key}\", \"3k_main_ceo_category_ancillary_{slot}\", {}}}",
-                    ANCILLARIES[key].character_owned
+                    "{{\"{key}\", \"3k_main_ceo_category_ancillary_{slot}\", {}, \"{permission}\"}}",
+                    item.character_owned
                 )
             })
         })
@@ -777,6 +802,7 @@ fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
     let mut rules = include_str!("script/sect_rules.lua").to_owned();
     let gains = doctrines::gains(config.variant);
     let tiers = doctrines::influence_thresholds(config.variant);
+    let influence_cap = doctrines::influence_cap(config.variant).to_string();
     for (marker, value) in [
         ("__FACTION_KEY__", key),
         ("__STARTING_TRAITS__", traits.as_str()),
@@ -805,6 +831,7 @@ fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
         ),
         ("__DOCTRINE_GAINS__", gains.as_str()),
         ("__INFLUENCE_TIERS__", tiers.as_str()),
+        ("__INFLUENCE_CAP__", influence_cap.as_str()),
     ] {
         rules = rules.replace(marker, value);
     }

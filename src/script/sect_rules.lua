@@ -5,6 +5,7 @@ local factor_key = faction_key .. "_teachings"
 local setback_factor = faction_key .. "_setbacks"
 local doctrines = { __DOCTRINE_GAINS__ }
 local thresholds = { __INFLUENCE_TIERS__ }
+local influence_cap = __INFLUENCE_CAP__
 local starting_traits = { __STARTING_TRAITS__ }
 local starting_ancillaries = { __STARTING_ANCILLARIES__ }
 local starting_region = "__START_REGION__"
@@ -17,6 +18,7 @@ local hepu = "3k_main_hepu_capital"
 local base_value = faction_key .. "_base"
 local growth_turn = faction_key .. "_growth_turn"
 local chapters_value = faction_key .. "_chapters"
+local chapter_cap = 5
 local assembly_key = faction_key .. "_assembly"
 local donations_key = faction_key .. "_assembly_donations"
 local dispatch_key = faction_key .. "_patron_dispatch"
@@ -118,7 +120,8 @@ local function equip_starting_ancillaries(owner)
     local inventory = cm:modify_faction(owner):ceo_management()
     local personal_inventory = cm:modify_character(leader):ceo_management()
     for _, item in ipairs(starting_ancillaries) do
-        local key, category, character_owned = item[1], item[2], item[3]
+        local key, category, character_owned, permission = item[1], item[2], item[3], item[4]
+        if permission ~= "" then personal_inventory:add_scripted_permission(permission) end
         local slot = ancillaries:get_valid_slot_for_category(leader, category)
         local equipped = slot and slot:equipped_ceo()
         if not equipped or equipped:is_null_interface() or equipped:ceo_data_key() ~= key then
@@ -192,7 +195,8 @@ end
 local function add_influence(owner, amount)
     local resource = owner:pooled_resources():resource(resource_key)
     if resource:is_null_interface() then return end
-    amount = math.max(-resource:value(), amount)
+    local value = resource:value()
+    amount = math.max(-value, math.min(math.max(0, influence_cap - value), amount))
     if amount == 0 then return end
     local factor = amount < 0 and setback_factor or factor_key
     cm:modify_model():get_modify_pooled_resource(resource):apply_transaction_to_factor(factor, amount)
@@ -204,6 +208,22 @@ local function current_patron()
     if not patron_key then return end
     local patron = cm:query_faction(patron_key)
     if patron and not patron:is_null_interface() and not patron:is_dead() then return patron end
+end
+
+local function restore_founder_family_chance(owner)
+    if not owner:is_human() or not owner:has_faction_leader() then return end
+    local founder = owner:faction_leader()
+    if founder:generation_template_key() ~= faction_key .. "_leader"
+        or founder:is_male() or not founder:has_effect_bundle("less_child") then return end
+    local family = founder:family_member()
+    if family:is_null_interface() or not family:has_spouse() then return end
+    local spouse = family:spouse():character()
+    if not spouse:is_null_interface() and not spouse:is_dead() and spouse:is_male()
+        and spouse:faction():name() == faction_key then
+        -- Marriage Harem Mod Reloaded reapplies this penalty to female player
+        -- leaders. Restore the regular marriage rules for this founder only.
+        cm:modify_character(founder):remove_effect_bundle("less_child")
+    end
 end
 
 local function establish_initial_contacts(owner)
@@ -291,7 +311,8 @@ local function grow_influence(context)
         add_influence(owner, -1)
         return
     end
-    local gain = 1
+    local chapters = cm:get_saved_value(chapters_value) or 0
+    local gain = 1 + math.floor(turn * chapters / 3) - math.floor((turn - 1) * chapters / 3)
     for doctrine, amount in pairs(doctrines) do
         local technology = faction_key .. "_" .. doctrine
         local reward = technology .. "_influence_awarded"
@@ -308,7 +329,7 @@ local function grow_influence(context)
     if owner:is_human() and turn % 6 == 4 then
         local dispatch = turn % 12 == 10 and owner:has_technology(faction_key .. "_patrons")
             and owner:treasury() >= 1500 and current_patron()
-        local can_endow = owner:treasury() >= 1000 and (cm:get_saved_value(chapters_value) or 0) < 5
+        local can_endow = owner:treasury() >= 1000 and chapters < chapter_cap
         cm:trigger_dilemma(faction_key, dispatch and dispatch_key or can_endow and assembly_key or donations_key, true)
     elseif owner:is_human() and turn % 10 == 5 and resource:value() >= 5 then
         cm:trigger_dilemma(faction_key, owner:treasury() >= 600 and relief_key or unfunded_relief_key, true)
@@ -324,6 +345,7 @@ cm:add_first_tick_callback(function()
     end
     reconcile_base()
     update_influence_effects()
+    restore_founder_family_chance(owner)
     if not is_cult then establish_initial_contacts(owner) end
     -- Reloading the opening turn must not grant Influence a second time.
     if not cm:get_saved_value(growth_turn) then
@@ -351,6 +373,10 @@ core:add_listener(faction_key .. "_single_base", "RegionOwnershipChanged",
 core:add_listener(faction_key .. "_followers", "FactionTurnStart",
     function(context) return context:faction():name() == faction_key end,
     grow_influence, true)
+
+core:add_listener(faction_key .. "_founder_family", "FactionAboutToEndTurn",
+    function(context) return context:faction():name() == faction_key end,
+    function(context) restore_founder_family_chance(context:faction()) end, true)
 
 if is_cult then
     core:add_listener(faction_key .. "_raid_reputation", faction_key .. "_raid_completed", true,
@@ -398,10 +424,12 @@ else
                 treasury:increase_treasury(900)
             elseif context:choice() == 1 and dilemma == assembly_key then
                 local chapters = cm:get_saved_value(chapters_value) or 0
-                if chapters < 5 and owner:treasury() >= 1000 then
+                if chapters < chapter_cap and owner:treasury() >= 1000 then
                     treasury:decrease_treasury(1000)
                     cm:set_saved_value(chapters_value, chapters + 1)
                     add_influence(owner, 6)
+                    local loc = "event_feed_strings_text_" .. faction_key .. "_chapter_"
+                    treasury:show_message_event(loc .. "title", loc .. (chapters + 1), loc .. "body", true, 0)
                 end
             end
         end, true)

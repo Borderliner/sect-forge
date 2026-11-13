@@ -3,6 +3,9 @@ local is_cult = __IS_CULT__
 local sack_target = __CULT_SACK_TARGET__
 local victory_value = faction_key .. "_victory_achieved"
 local patron_value = faction_key .. "_patron"
+local pending_patron = patron_value .. "_pending"
+local offered_deal = patron_value .. "_offered_deal"
+local patron_dilemma = faction_key .. "_choose_patron"
 local sack_count = faction_key .. "_cities_sacked"
 local contract_key = faction_key .. "_plunder_contract"
 local contract_until = faction_key .. "_contract_until"
@@ -26,8 +29,7 @@ local function check_patron(patron)
     end
 end
 
-local function sponsored_warlord(deal)
-    local terms = deal:components()
+local function sponsored_warlord(terms)
     if terms:num_items() ~= 1 then return end
     local payment = terms:item_at(0)
     if payment:treaty_component_key() ~= "treaty_components_payment_regular_offer" then return end
@@ -38,6 +40,14 @@ local function sponsored_warlord(deal)
     return patron
 end
 
+local function offer_patron(patron, id)
+    if cm:get_saved_value(pending_patron) or patron:name() == cm:get_saved_value(patron_value) then return end
+    local seen = patron_value .. "_deal_" .. id
+    if cm:get_saved_value(seen) then return end
+    cm:set_saved_value(pending_patron, patron:name())
+    cm:set_saved_value(offered_deal, id)
+end
+
 local function find_new_patron(owner)
     local deals = owner:diplomatic_deal_list()
     local latest, patron = -1, nil
@@ -46,22 +56,29 @@ local function find_new_patron(owner)
         local id = deal:cqi()
         local seen = patron_value .. "_deal_" .. id
         if not cm:get_saved_value(seen) then
-            local candidate = sponsored_warlord(deal)
-            cm:set_saved_value(seen, true)
+            local candidate = sponsored_warlord(deal:components())
             if candidate and id > latest then
                 latest, patron = id, candidate
             end
         end
     end
-    if not patron or patron:name() == cm:get_saved_value(patron_value) then return end
+    if patron then offer_patron(patron, latest) end
+end
 
-    cm:set_saved_value(patron_value, patron:name())
+local function confirm_patron(owner)
+    local key = cm:get_saved_value(pending_patron)
+    cm:set_saved_value(pending_patron, false)
+    if not key then return end
+    local patron = cm:query_faction(key)
+    if not patron or patron:is_null_interface() or patron:is_dead() or not patron:has_capital_region() then return end
+    cm:set_saved_value(patron_value, key)
     local seat = patron:capital_region():settlement()
     cm:modify_faction(owner):show_message_event_located(
         "event_feed_strings_text_" .. faction_key .. "_patron_title",
         "event_feed_strings_text_" .. faction_key .. "_patron_detail",
         "event_feed_strings_text_" .. faction_key .. "_patron_body",
         seat:logical_position_x(), seat:logical_position_y(), true, 0)
+    check_patron(patron)
 end
 
 local function record_sack(region)
@@ -150,15 +167,49 @@ if is_cult then
             record_sack(context:garrison_residence():region())
         end, true)
 else
-    core:add_listener(faction_key .. "_gift", "DiplomacyNegotiationFinished",
+    core:add_listener(faction_key .. "_gift", "DiplomacyDealNegotiated",
         function() return player_faction() and not cm:get_saved_value(victory_value) end,
-        function() find_new_patron(cm:query_faction(faction_key)) end, true)
+        function(context)
+            local deals = context:deals():deals()
+            for i = 0, deals:num_items() - 1 do
+                local negotiated = deals:item_at(i)
+                local deal = negotiated:deal()
+                local patron = sponsored_warlord(negotiated:components())
+                if patron and not deal:is_null_interface() then
+                    offer_patron(patron, deal:cqi())
+                    return
+                end
+            end
+        end, true)
 
-    core:add_listener(faction_key .. "_gift_turn_end", "FactionAboutToEndTurn",
+    core:add_listener(faction_key .. "_patron_choice", "DilemmaChoiceMadeEvent",
+        function(context)
+            return context:faction():name() == faction_key and context:dilemma() == patron_dilemma
+        end,
+        function(context)
+            if context:choice() == 0 then
+                confirm_patron(context:faction())
+            else
+                cm:set_saved_value(pending_patron, false)
+            end
+        end, true)
+
+    core:add_listener(faction_key .. "_gift_next_turn", "FactionTurnStart",
         function(context)
             return context:faction():name() == faction_key and player_faction() and not cm:get_saved_value(victory_value)
         end,
-        function(context) find_new_patron(context:faction()) end, true)
+        function(context)
+            local owner = context:faction()
+            local id = cm:get_saved_value(offered_deal)
+            if not id then
+                find_new_patron(owner)
+                id = cm:get_saved_value(offered_deal)
+            end
+            if id and cm:modify_faction(owner):trigger_dilemma(patron_dilemma, true) then
+                cm:set_saved_value(patron_value .. "_deal_" .. id, true)
+                cm:set_saved_value(offered_deal, false)
+            end
+        end, true)
 
     for _, event in ipairs({"FactionBecomesWorldLeader", "FactionBecomesWorldLeaderCaptureSettlement", "FactionTurnStart"}) do
         core:add_listener(faction_key .. "_" .. event, event,

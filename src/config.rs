@@ -310,6 +310,7 @@ pub struct Ancillary {
     pub rarity: String,
     classes: String,
     pub character_owned: bool,
+    pub permission: Option<String>,
 }
 
 impl Ancillary {
@@ -341,6 +342,10 @@ pub static ANCILLARIES: LazyLock<BTreeMap<String, Ancillary>> = LazyLock::new(||
                         .get(5)
                         .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false),
+                    permission: row
+                        .get(6)
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned),
                 },
             );
         }

@@ -28,6 +28,11 @@ const PERSISTENT_RETINUE_CQI: usize = 25;
 const PERSISTENT_SLOT_CQI: usize = 26;
 const DEPLOYED_RETINUE_CQI: usize = 27;
 const DEPLOYED_SLOT_CQI: usize = 28;
+const CEO_MANAGER_CQI: usize = 36;
+const CEO_CQI: usize = 38;
+const CEO_EQUIPMENT_SLOT_CQI: usize = 39;
+const VANILLA_STARTING_INFANTRY: &str = "3k_main_unit_wood_ji_militia";
+const TROM_STARTING_INFANTRY: &str = "hv_unit_militia_ji_infantry";
 
 pub fn packs(workshop: &[PathBuf]) -> Result<[PathBuf; 2]> {
     let find = |part, id, file| {
@@ -107,7 +112,7 @@ fn equipment(
         .max()
         .context("Missing equipment managers")?
         + 1;
-    edit.replace_int(&counters[36], new_manager_id + 1);
+    edit.replace_int(&counters[CEO_MANAGER_CQI], new_manager_id + 1);
     let original_items = donor
         .one(&donor.root, "ALL_OWNED_CEOS")?
         .groups
@@ -115,7 +120,7 @@ fn equipment(
         .filter(|group| donor.number(&group[1].fields()[1]) == Some(old_manager_id))
         .collect::<Vec<_>>();
     let items = world.one(&world.root, "ALL_OWNED_CEOS")?;
-    let first = reserve(edit, counters, &[38], original_items.len())?;
+    let first = reserve(edit, counters, &[CEO_CQI], original_items.len())?;
     let mut ids = HashMap::new();
     for (index, group) in original_items.iter().enumerate() {
         let item = &group[1].fields()[0];
@@ -135,6 +140,16 @@ fn equipment(
     }
     let mut changes = remap(donor, original, &ids);
     changes.insert(manager_field.start, integer(new_manager_id));
+    // Equipment slots have their own CQI space. Donor slot IDs already belong
+    // to other TROM characters, even when the associated CEO IDs are unique.
+    let slots = donor.find(original, "CEO_EQUIPMENT_SLOT");
+    let first_slot = reserve(edit, counters, &[CEO_EQUIPMENT_SLOT_CQI], slots.len())?;
+    for (index, slot) in slots.iter().enumerate() {
+        changes.insert(
+            slot.fields()[0].start,
+            integer(first_slot + u32::try_from(index)?),
+        );
+    }
     let mut bytes = integer(new_char);
     bytes.extend(edit.import(donor, original, &changes)?);
     edit.append(world.one(&world.root, managers)?, bytes);
@@ -208,6 +223,15 @@ fn founder(
     }
     let mut army_changes = remap(donor, army, &ids);
     army_changes.extend(force_slots);
+    for unit in &units {
+        for field in unit
+            .fields()
+            .iter()
+            .filter(|field| donor.text(field) == Some(VANILLA_STARTING_INFANTRY))
+        {
+            army_changes.insert(field.start, edit.text_reference(TROM_STARTING_INFANTRY));
+        }
+    }
     let imported = edit.import(donor, army, &army_changes)?;
     edit.replace(world.one(faction, "ARMY_ARRAY")?, imported);
     let fields = faction.fields();
@@ -241,6 +265,29 @@ fn founder(
     ids.insert(donor.id(&origin.fields()[0])?, world.id(&fields[0])?);
     let mut character_changes = remap(donor, character, &ids);
     character_changes.extend(persistent_slots);
+    for slot in donor.find(character, "PERSISTENT_RETINUE_SLOT_UNIT_INFO") {
+        let unit = &slot.fields()[0];
+        if donor.text(unit) == Some(VANILLA_STARTING_INFANTRY) {
+            character_changes.insert(unit.start, edit.text_reference(TROM_STARTING_INFANTRY));
+        }
+    }
+    for slot in donor.find(character, "CHARACTER_PERSISTENT_RETINUE_SLOT_RECRUITMENT") {
+        let [tree, node, subtree] = slot.fields() else {
+            anyhow::bail!("Unexpected founder recruitment slot");
+        };
+        let recruit = match donor.text(node) {
+            Some("3k_main_wood_halberd_militia") => TROM_STARTING_INFANTRY,
+            Some("node_empty") => "node_empty",
+            _ => anyhow::bail!("Unexpected founder recruitment node"),
+        };
+        for (field, value) in [
+            (tree, "hv_retinue_tree_all"),
+            (node, recruit),
+            (subtree, "hv_retinue_subtree_all"),
+        ] {
+            character_changes.insert(field.start, edit.text_reference(value));
+        }
+    }
     if site.key != HEPU {
         let position = donor.one(character, "LOCOMOTABLE")?.fields();
         let mut display = vec![0x0c];

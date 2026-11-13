@@ -90,6 +90,7 @@
     ["3k_ytr_ancillary_accessory_stone_statue_of_zhang_liang", "3k_ytr_ancillary_accessory_stone_statue_of_zhang_liang", "accessories/3k_ytr_ancillary_accessory_stone_statue_of_zhang_liang.png", "refined", ""]
   ],
   "armour": [
+    ["3k_dlc04_ancillary_armour_empress_hes_armour_unique", "3k_dlc04_ancillary_armour_empress_hes_armour_unique", "armours/3k_dlc04_ancillary_armour_empress_he_armour_unique.png", "unique", "earth", true, "3k_dlc04_ceo_permissions_ancillary_armour_character_specific_empress_he"],
     ["3k_main_ancillary_armour_heavy_armour_fire_extraordinary", "3k_main_ancillary_heavy_armour_fire_extraordinary", "armours/3k_main_ancillary_armour_heavy_armour_fire_extraordinary.png", "exceptional", "fire"],
     ["3k_main_ancillary_armour_heavy_armour_fire_unique", "3k_main_ancillary_heavy_armour_fire_unique", "armours/3k_main_ancillary_armour_heavy_armour_fire_unique.png", "unique", "fire"],
     ["3k_main_ancillary_armour_heavy_armour_wood_and_fire_common", "3k_main_ancillary_heavy_armour_wood_and_fire_common", "armours/3k_main_ancillary_armour_heavy_armour_wood_and_fire_common.png", "common", "wood fire", true],
@@ -220,6 +221,7 @@
     ["3k_main_ancillary_mount_yellow_hoofed_thunder", "3k_main_ancillary_yellow_hoofed_thunder", "mounts/3k_main_ancillary_yellow_hoofed_thunder.png", "unique", ""]
   ],
   "weapon": [
+    ["3k_main_ancillary_weapon_trident_halberd", "3k_main_ancillary_trident_halberd", "weapons/3k_main_ancillary_trident_halberd.png", "unique", "wood fire", true],
     ["3k_dlc04_ancillary_weapon_staff_zhang_jue_unique", "3k_dlc04_ancillary_weapon_staff_zhang_jue_unique", "weapons/3k_dlc04_ancillary_weapon_staff_zhang_jue_unique.png", "unique", "wood"],
     ["3k_dlc05_ancillary_weapon_white_tigers_claws", "3k_dlc05_ancillary_white_tigers_claws", "weapons/3k_dlc05_ancillary_weapon_sword_white_tiger_yan.png", "unique", "earth", true],
     ["3k_dlc06_ancillary_weapon_axe_stone_common", "3k_dlc06_ancillary_weapon_axe_stone_common", "weapons/3k_dlc06_ancillary_weapon_axe_stone_common.png", "common", "earth metal", true],
