@@ -422,7 +422,7 @@ else
             end
             if context:choice() == 0 then
                 treasury:increase_treasury(900)
-            elseif context:choice() == 1 and dilemma == assembly_key then
+            elseif context:choice() == 2 and dilemma == assembly_key then
                 local chapters = cm:get_saved_value(chapters_value) or 0
                 if chapters < chapter_cap and owner:treasury() >= 1000 then
                     treasury:decrease_treasury(1000)
