@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{
     buildings, campaign_actions,
-    config::{ANCILLARIES, BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, SLOTS, Variant},
+    config::{BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, SLOTS, Variant},
     doctrines,
     game::{self, Game, Localization, Row, add, add_loc, add_rows, db_path, field, raw, rows, set},
     portraits::{self, FounderArt},
@@ -79,6 +79,34 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             );
         }
     }
+    let trom_packs = if config.trom_compat {
+        report("Reading TROM 5.2 campaign");
+        let parts = trom::packs(&game::workshop_packs())?;
+        dependencies.extend(
+            parts
+                .iter()
+                .map(|part| part.file_name().unwrap().to_string_lossy().into_owned()),
+        );
+        Some([game::open_pack(&parts[0])?, game::open_pack(&parts[1])?])
+    } else {
+        None
+    };
+    let trom_pack = trom_packs.as_ref().map(|[part, _]| part);
+    let mut equipment = BTreeMap::new();
+    if !config.starting_ancillaries.is_empty() {
+        let mut available = game.equipment(trom_packs.as_ref().map(|[a, b]| [a, b]))?;
+        for (slot, key) in &config.starting_ancillaries {
+            let item = available.remove(key).with_context(|| {
+                format!("Starting item {key} is missing from this campaign's equipment.")
+            })?;
+            ensure!(
+                item.slot == slot && item.fits(config.element()),
+                "{} cannot be equipped in the {slot} slot for this founder.",
+                item.title
+            );
+            equipment.insert(key.clone(), item);
+        }
+    }
     report("Preparing founder artwork");
     let portrait_pack = config
         .portrait_pack
@@ -119,19 +147,11 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         &key,
         portrait,
         config.element(),
+        config
+            .starting_ancillaries
+            .get("armour")
+            .map(String::as_str),
     )?;
-    let trom_pack = if config.trom_compat {
-        report("Reading TROM 5.2 campaign");
-        let parts = trom::packs(&game::workshop_packs())?;
-        dependencies.extend(
-            parts
-                .iter()
-                .map(|part| part.file_name().unwrap().to_string_lossy().into_owned()),
-        );
-        Some(game::open_pack(&parts[0])?)
-    } else {
-        None
-    };
 
     for mode in Mode::ALL {
         report(&format!("Writing the {} campaign start", mode.key()));
@@ -147,7 +167,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             technology.as_deref(),
         )
         .with_context(|| format!("Customize {} start position", mode.key()))?;
-        if let Some(trom) = &trom_pack {
+        if let Some(trom) = trom_pack {
             generated = trom::merge(&raw(trom, &path)?, &generated, mode, &key, &config)
                 .with_context(|| format!("Merge the {} TROM campaign", mode.key()))?;
         }
@@ -155,7 +175,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     }
 
     report("Writing faction, doctrines, and victory rules");
-    let unlocks = unlocks::Sources::new(&game.pack, trom_pack.as_ref());
+    let unlocks = unlocks::Sources::new(&game.pack, trom_pack);
     let permission_group =
         unlocks::write_recruitment(&unlocks, &mut pack, &template, &config, &key)?;
     faction_rows(
@@ -171,21 +191,14 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     let mut loc = localization(&config, &key);
     variant(&game.pack, &mut pack, &mut loc, &config, &key)?;
     campaign_actions::write(&game.pack, &mut pack, &mut loc, config.variant, &key)?;
-    doctrines::write(
-        &game.pack,
-        trom_pack.as_ref(),
-        &mut pack,
-        &mut loc,
-        &config,
-        &key,
-    )?;
+    doctrines::write(&game.pack, trom_pack, &mut pack, &mut loc, &config, &key)?;
     unlocks::write_buildings(&unlocks, &mut pack, &mut loc, &config, &key)?;
     buildings::write(&unlocks, &mut pack, &mut loc, &config, &key)?;
-    if let Some(trom) = &trom_pack {
+    if let Some(trom) = trom_pack {
         trom::write_supplies_tooltips(&game.pack, trom, &mut pack, &key)?;
     }
     if !cult {
-        if let Some(trom) = &trom_pack {
+        if let Some(trom) = trom_pack {
             add(
                 &mut pack,
                 trom::REFORMS,
@@ -193,7 +206,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             )?;
         }
     }
-    scripts(&mut pack, &config, &key)?;
+    scripts(&mut pack, &config, &key, &equipment)?;
     add_loc(&mut pack, &format!("text/db/{key}.loc"), loc)?;
     pack.set_dependencies(dependencies.into_iter().map(|name| (true, name)).collect());
 
@@ -772,7 +785,12 @@ fn variant(
     Ok(())
 }
 
-fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
+fn scripts(
+    pack: &mut Pack,
+    config: &Config,
+    key: &str,
+    selected: &game::EquipmentCatalog,
+) -> Result<()> {
     add(
         pack,
         &format!("script/campaign/three_kingdoms_early/factions/{key}/{key}_start.lua"),
@@ -789,7 +807,7 @@ fn scripts(pack: &mut Pack, config: &Config, key: &str) -> Result<()> {
         .iter()
         .filter_map(|(slot, _)| {
             config.starting_ancillaries.get(*slot).map(|key| {
-                let item = &ANCILLARIES[key];
+                let item = &selected[key];
                 let permission = item.permission.as_deref().unwrap_or("");
                 format!(
                     "{{\"{key}\", \"3k_main_ceo_category_ancillary_{slot}\", {}, \"{permission}\"}}",

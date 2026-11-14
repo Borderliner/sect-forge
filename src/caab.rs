@@ -211,9 +211,18 @@ impl Document {
             6 | 0x16 => Some(bytes[0].into()),
             7 | 0x17 => Some(u16::from_le_bytes([bytes[0], bytes[1]]).into()),
             0x18 => Some(u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]])),
-            8 => uint(bytes, 0).ok(),
+            8 | 0x25 => uint(bytes, 0).ok(),
             _ => None,
         }
+    }
+
+    pub fn bitset(&self, node: &Node) -> Option<&[u8]> {
+        let bytes = self.raw(node);
+        if bytes[0] != 0x49 {
+            return None;
+        }
+        let (length, data) = sized(bytes, 1).ok()?;
+        bytes.get(data..data + length)
     }
 
     pub fn float(&self, node: &Node) -> Option<f32> {

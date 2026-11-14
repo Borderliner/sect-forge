@@ -236,7 +236,7 @@ impl Config {
             "Choose at most one physical trait."
         );
         if let Some(key) = self.starting_ancillaries.remove("extra") {
-            let item = ANCILLARIES
+            let item = LEGACY_EQUIPMENT
                 .get(&key)
                 .context("Unknown legacy accessory or follower.")?;
             ensure!(
@@ -248,12 +248,13 @@ impl Config {
                 .or_insert(key);
         }
         for (slot, key) in &self.starting_ancillaries {
-            let item = ANCILLARIES
-                .get(key)
-                .with_context(|| format!("Unknown starting item {key}."))?;
             ensure!(
-                item.slot == slot && item.fits(self.element()),
-                "Choose an eligible starting item for {slot}."
+                SLOTS.iter().any(|(known, _)| known == slot)
+                    && !key.is_empty()
+                    && key
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
+                "Invalid starting equipment entry for {slot}."
             );
         }
         Ok(self)
@@ -302,56 +303,36 @@ pub static SETTLEMENTS: LazyLock<Vec<Settlement>> = LazyLock::new(|| {
 pub static WARLORDS: LazyLock<Vec<Warlord>> =
     LazyLock::new(|| serde_json::from_str(include_str!("data/warlords.json")).unwrap());
 
-#[derive(Debug)]
-pub struct Ancillary {
+pub(crate) struct LegacyEquipment {
     pub slot: &'static str,
-    pub node: String,
-    pub icon: String,
-    pub rarity: String,
-    classes: String,
-    pub character_owned: bool,
-    pub permission: Option<String>,
+    pub classes: String,
 }
 
-impl Ancillary {
+impl LegacyEquipment {
     pub fn fits(&self, element: &str) -> bool {
-        self.classes.is_empty()
-            || self
-                .classes
-                .split_ascii_whitespace()
-                .any(|class| class == element)
+        self.classes.is_empty() || self.classes.split_ascii_whitespace().any(|c| c == element)
     }
 }
 
-pub static ANCILLARIES: LazyLock<BTreeMap<String, Ancillary>> = LazyLock::new(|| {
-    let groups: BTreeMap<String, Vec<Vec<serde_json::Value>>> =
-        serde_json::from_str(include_str!("starting_ancillaries.json")).unwrap();
-    let mut items = BTreeMap::new();
-    for (slot, _) in SLOTS {
-        for row in &groups[slot] {
-            let field = |i: usize| row[i].as_str().unwrap().to_owned();
-            items.insert(
-                field(0),
-                Ancillary {
-                    slot,
-                    node: field(1),
-                    icon: format!("ui/ancillaries/{}", field(2)),
-                    rarity: field(3),
-                    classes: field(4),
-                    character_owned: row
-                        .get(5)
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(false),
-                    permission: row
-                        .get(6)
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_owned),
-                },
-            );
+pub(crate) static LEGACY_EQUIPMENT: LazyLock<BTreeMap<String, LegacyEquipment>> =
+    LazyLock::new(|| {
+        let groups: BTreeMap<String, Vec<Vec<serde_json::Value>>> =
+            serde_json::from_str(include_str!("starting_ancillaries.json")).unwrap();
+        let mut items = BTreeMap::new();
+        for (slot, _) in SLOTS {
+            for row in &groups[slot] {
+                let field = |i: usize| row[i].as_str().unwrap().to_owned();
+                items.insert(
+                    field(0),
+                    LegacyEquipment {
+                        slot,
+                        classes: field(4),
+                    },
+                );
+            }
         }
-    }
-    items
-});
+        items
+    });
 
 pub fn output_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")

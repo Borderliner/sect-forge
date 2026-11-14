@@ -10,7 +10,7 @@ use rpfm_lib::files::pack::Pack;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    config::ANCILLARIES,
+    config::LEGACY_EQUIPMENT,
     game::{self, Row, add, add_rows, field, raw, set},
 };
 
@@ -494,6 +494,7 @@ pub fn export(
     key: &str,
     portrait: &Portrait,
     element: &str,
+    armour: Option<&str>,
 ) -> Result<FounderArt> {
     let mut art_set = portrait
         .art_set
@@ -543,7 +544,7 @@ pub fn export(
                 && has_transparent_armour(source, &donor, &art));
         if portrait.face_art == FaceArt::Layered || full_portrait {
             if full_portrait {
-                blank_armour_layers(game, output, &root, element, is_male)?;
+                blank_armour_layers(game, output, &root, element, is_male, armour)?;
             }
             export_face(
                 source,
@@ -593,7 +594,7 @@ pub fn export(
             is_male,
         });
     }
-    blank_armour_layers(game, output, &root, element, is_male)?;
+    blank_armour_layers(game, output, &root, element, is_male, armour)?;
     // Put the standalone image above a transparent armour layer for each equipment variant.
     for (path, provider) in files {
         if path.starts_with("stills/") && path.ends_with(&card_file) {
@@ -677,6 +678,7 @@ fn blank_armour_layers(
     root: &str,
     element: &str,
     is_male: bool,
+    armour: Option<&str>,
 ) -> Result<()> {
     let mut folders = vec![element];
     if element == "water" {
@@ -712,21 +714,21 @@ fn blank_armour_layers(
             }
         }
     }
-    if !is_male {
-        // Wood and Fire use shared equipment even though vanilla has no generic women in those classes.
-        for (key, _) in ANCILLARIES
-            .iter()
-            .filter(|(_, item)| item.slot == "armour" && item.fits(element))
-        {
-            for name in [key.clone(), format!("{key}_female")] {
-                for size in PORTRAIT_STILLS {
-                    layers.insert(format!("stills/{size}/{name}.png"));
-                    layers.insert(format!("stills/{size}/large/{name}.png"));
-                }
-                for panel in ["large_panel", "small_panel"] {
-                    for mood in ["norm", "happy", "angry"] {
-                        layers.insert(format!("composites/{name}/{panel}/{mood}/{mood}.png"));
-                    }
+    // Standalone portraits already include clothing. Women in classes without generic
+    // female artwork also need transparent layers for the shared armours they can change into.
+    let shared_armour = LEGACY_EQUIPMENT.iter().filter_map(|(key, item)| {
+        (!is_male && item.slot == "armour" && item.fits(element)).then_some(key.as_str())
+    });
+    let gender = if is_male { "male" } else { "female" };
+    for key in armour.into_iter().chain(shared_armour) {
+        for name in [key.to_owned(), format!("{key}_{gender}")] {
+            for size in PORTRAIT_STILLS {
+                layers.insert(format!("stills/{size}/{name}.png"));
+                layers.insert(format!("stills/{size}/large/{name}.png"));
+            }
+            for panel in ["large_panel", "small_panel"] {
+                for mood in ["norm", "happy", "angry"] {
+                    layers.insert(format!("composites/{name}/{panel}/{mood}/{mood}.png"));
                 }
             }
         }
@@ -972,6 +974,7 @@ mod tests {
             "founder",
             portrait,
             "water",
+            None,
         )?;
         assert!(!art.is_male);
         let rows = game::rows_at(&output, &game::db_path(ARTS, "founder"))?;
@@ -1011,6 +1014,8 @@ mod tests {
             "stills/unitcards/large/3k_main_ancillary_armour_light_tunic_unique_water_female.png";
         let composite = "composites/ep_ancillary_armour_light_tunic_unique_water_female/small_panel/norm/norm.png";
         let regular = "stills/unitcards/3k_main_ancillary_armour_light_leather_partial_refined_shared_female.png";
+        let selected = "3k_mtu_ancillary_armour_huang_zus_armour_unique";
+        let selected_still = format!("stills/unitcards/large/{selected}_female.png");
         let mut game = game::new_pack("vanilla.pack");
         for (folder, asset) in [
             ("water_strategist", still),
@@ -1024,8 +1029,8 @@ mod tests {
             )?;
         }
         let mut output = game::new_pack("output.pack");
-        blank_armour_layers(&game, &mut output, root, "water", false)?;
-        for asset in [still, composite, regular] {
+        blank_armour_layers(&game, &mut output, root, "water", false, Some(selected))?;
+        for asset in [still, composite, regular, &selected_still] {
             assert_eq!(
                 raw(&output, &format!("{root}{asset}"))?,
                 include_bytes!("data/blank.png")

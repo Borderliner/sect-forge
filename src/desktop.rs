@@ -29,8 +29,8 @@ use rpfm_lib::files::{Container, pack::Pack};
 
 use crate::{
     config::{
-        ANCILLARIES, CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MIN_FOUNDER_AGE, SETTLEMENTS, SLOTS,
-        Settlement, Variant, WARLORDS, output_dir,
+        CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MIN_FOUNDER_AGE, SETTLEMENTS, SLOTS, Settlement,
+        Variant, WARLORDS, output_dir,
     },
     export,
     game::{self, EquipmentCatalog, EquipmentStats, Game, MAP_IMAGE, Trait, TraitCategory},
@@ -110,6 +110,7 @@ struct Library {
     trait_error: Option<String>,
     equipment: Result<EquipmentCatalog, String>,
     trom_equipment: Option<Result<EquipmentCatalog, String>>,
+    trom_art: Option<[usize; 2]>,
 }
 
 #[derive(Clone)]
@@ -435,13 +436,17 @@ impl Editor {
                 Err(error) => (Vec::new(), Some(format!("{error:#}"))),
             };
             let workshop = game::workshop_packs();
-            let equipment = game
-                .equipment_stats(None)
-                .map_err(|error| format!("{error:#}"));
-            let trom_equipment = trom::packs(&workshop).ok().map(|[part_one, _]| {
-                game::open_pack(&part_one)
-                    .and_then(|pack| game.equipment_stats(Some(&pack)))
-                    .map_err(|error| format!("{error:#}"))
+            let equipment = game.equipment(None).map_err(|error| format!("{error:#}"));
+            let mut trom_art = None;
+            let trom_equipment = trom::packs(&workshop).ok().map(|[part_one, part_two]| {
+                (|| -> Result<_> {
+                    let a = Arc::new(game::open_pack(&part_one)?);
+                    let b = Arc::new(game::open_pack(&part_two)?);
+                    let catalog = game.equipment(Some([&a, &b]))?;
+                    trom_art = Some([artwork.register(a), artwork.register(b)]);
+                    Ok(catalog)
+                })()
+                .map_err(|error| format!("{error:#}"))
             });
             let art_id = artwork.register(game.pack.clone());
             Ok::<_, anyhow::Error>((
@@ -454,6 +459,7 @@ impl Editor {
                     trait_error,
                     equipment,
                     trom_equipment,
+                    trom_art,
                 },
                 workshop,
             ))
@@ -468,6 +474,9 @@ impl Editor {
                             editor.game_path = Some(path);
                             if let Some(old) = editor.library.replace(library) {
                                 editor.artwork.discard(old.art_id);
+                                for id in old.trom_art.into_iter().flatten() {
+                                    editor.artwork.discard(id);
+                                }
                             }
                             editor.workshop = workshop;
                             if let Some(path) = editor.config.portrait_pack.clone() {
@@ -793,6 +802,34 @@ impl Editor {
         let data = self.library.as_ref()?;
         data.game.pack.file(path, true)?;
         Some(asset(data.art_id, path))
+    }
+
+    fn equipment_catalog(&self) -> Option<&EquipmentCatalog> {
+        let data = self.library.as_ref()?;
+        if self.config.trom_compat {
+            data.trom_equipment
+                .as_ref()
+                .and_then(|catalog| catalog.as_ref().ok())
+        } else {
+            data.equipment.as_ref().ok()
+        }
+    }
+
+    fn remove_incompatible_equipment(&mut self) {
+        let element = self.config.element();
+        let Some(catalog) = self.equipment_catalog() else {
+            return;
+        };
+        let remove: Vec<_> = self
+            .config
+            .starting_ancillaries
+            .iter()
+            .filter(|(_, key)| !catalog.get(*key).is_some_and(|item| item.fits(element)))
+            .map(|(slot, _)| slot.clone())
+            .collect();
+        for slot in remove {
+            self.config.starting_ancillaries.remove(&slot);
+        }
     }
 
     fn portrait_art(&self, portrait: &Portrait, source: Option<&Source>) -> Option<String> {
@@ -1358,10 +1395,7 @@ impl Editor {
                                 .child(name)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.config.subtype = class.into();
-                                    let element = class.trim_start_matches("3k_general_");
-                                    this.config
-                                        .starting_ancillaries
-                                        .retain(|_, key| ANCILLARIES[key].fits(element));
+                                    this.remove_incompatible_equipment();
                                     this.results_page = 0;
                                     this.edited(cx);
                                 }))
@@ -1889,58 +1923,27 @@ impl Editor {
         let query = self.query(cx);
         let slot = self.slot;
         let selected = self.config.starting_ancillaries.get(slot);
-        let (stats, stats_note) = if self.config.trom_compat {
-            match &data.trom_equipment {
-                Some(Ok(stats)) => (Ok(stats), None),
-                _ => (
-                    data.equipment.as_ref(),
-                    Some(
-                        "TROM equipment stats are unavailable. Showing vanilla stats where available.",
-                    ),
-                ),
-            }
+        let catalog = if self.config.trom_compat {
+            data.trom_equipment.as_ref().map_or_else(
+                || Err("Install both TROM packs to browse TROM equipment."),
+                |catalog| catalog.as_ref().map_err(String::as_str),
+            )
         } else {
-            (data.equipment.as_ref(), None)
+            data.equipment.as_ref().map_err(String::as_str)
         };
-        let stats_error = stats
-            .as_ref()
-            .err()
-            .map(|error| format!("Equipment stats unavailable. {error}"));
-        let stats = stats.ok();
-        let mut entries = ANCILLARIES
+        let mut entries = catalog
             .iter()
-            .filter_map(|(key, item)| {
-                if item.slot != slot
-                    || !item.fits(self.config.element())
-                    || self
+            .flat_map(|items| items.iter())
+            .filter(|(key, item)| {
+                item.slot == slot
+                    && self
                         .equipment_rarity
-                        .is_some_and(|rarity| item.rarity != rarity)
-                {
-                    return None;
-                }
-                let title = data
-                    .game
-                    .loc
-                    .get(&format!("ceo_nodes_title_{}", item.node))
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        portraits::words(key.trim_start_matches("3k_main_ancillary_"))
-                    });
-                let description = data
-                    .game
-                    .loc
-                    .get(&format!("ceo_nodes_description_{}", item.node))
-                    .map(String::as_str)
-                    .unwrap_or_default();
-                matches_text(&query, &[&title, key, &item.rarity, description]).then_some((
-                    key,
-                    item,
-                    title,
-                    description,
-                ))
+                        .is_none_or(|rarity| item.rarity == rarity)
+                    && matches_text(&query, &[&item.title, key, &item.rarity, &item.description])
             })
             .collect::<Vec<_>>();
-        entries.sort_by_cached_key(|(_, _, title, _)| title.to_lowercase());
+        let element = self.config.element();
+        entries.sort_by_cached_key(|(_, item)| (!item.fits(element), item.title.to_lowercase()));
         let page = self.catalog_page(Catalog::Equipment, entries.len());
         col()
             .gap_4()
@@ -1999,20 +2002,31 @@ impl Editor {
                             }),
                     ),
             )
-            .when_some(stats_note, |list, note| list.child(notice(note, GOLD)))
-            .when_some(stats_error, |list, error| list.child(notice(error, GOLD)))
+            .when_some(catalog.err(), |list, error| {
+                list.child(notice(error.to_owned(), GOLD))
+            })
             .child(self.pagination(Catalog::Equipment, page, false, cx))
             .child(
-                col().gap_2().children(entries[page.range()].iter().map(
-                    |(key, item, title, desc)| {
+                col()
+                    .gap_2()
+                    .children(entries[page.range()].iter().map(|(key, item)| {
                         let current = selected == Some(*key);
                         let key = (*key).clone();
-                        let item_stats = stats.and_then(|stats| stats.get(&key));
+                        let unavailable = item.unavailable.or_else(|| {
+                            (!item.fits(element)).then_some("Requires a different founder class")
+                        });
+                        let icon = match (item.icon_source, data.trom_art) {
+                            (1, Some([id, _])) | (2, Some([_, id])) => Some(asset(id, &item.icon)),
+                            _ => self.art(&item.icon),
+                        };
                         let (rarity, tone) = RARITIES
                             .iter()
                             .find(|(raw, _, _)| *raw == item.rarity)
                             .map_or(("Unknown", MUTED), |(_, label, tone)| (*label, *tone));
                         control(format!("equipment-{key}"), current)
+                            .when(unavailable.is_some(), |row| {
+                                row.tab_index(-1).cursor_default()
+                            })
                             .w_full()
                             .h_auto()
                             .min_h(px(62.))
@@ -2021,7 +2035,7 @@ impl Editor {
                             .justify_start()
                             .gap_4()
                             .child(div().size(px(44.)).flex_shrink_0().child(picture(
-                                self.art(&item.icon),
+                                icon,
                                 "◇",
                                 ObjectFit::Contain,
                             )))
@@ -2036,37 +2050,38 @@ impl Editor {
                                             .gap_2()
                                             .items_center()
                                             .flex_wrap()
-                                            .child(title.clone())
+                                            .child(item.title.clone())
                                             .child(caption(rarity).text_color(rgb(tone))),
                                     )
-                                    .when_some(item_stats, |element, stats| {
-                                        element.child(equipment_stat_lines(stats))
+                                    .child(equipment_stat_lines(&item.stats))
+                                    .when(!item.description.is_empty(), |element| {
+                                        element.child(body(item.description.clone()).w_full())
                                     })
-                                    .when(!desc.is_empty(), |element| {
-                                        element.child(body((*desc).to_owned()).w_full())
+                                    .when_some(unavailable, |element, reason| {
+                                        element.child(caption(reason).text_color(rgb(MUTED)))
                                     }),
                             )
-                            .child(
-                                div()
-                                    .flex_shrink_0()
-                                    .text_color(rgb(GOLD))
-                                    .text_size(px(16.))
-                                    .child(if current { "✓" } else { "+" }),
-                            )
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.config
-                                    .starting_ancillaries
-                                    .insert(slot.into(), key.clone());
-                                this.edited(cx);
-                            }))
-                    },
-                )),
+                            .when(unavailable.is_none(), |row| {
+                                row.child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .text_color(rgb(GOLD))
+                                        .text_size(px(16.))
+                                        .child(if current { "✓" } else { "+" }),
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        this.config
+                                            .starting_ancillaries
+                                            .insert(slot.into(), key.clone());
+                                        this.edited(cx);
+                                    },
+                                ))
+                            })
+                    })),
             )
             .when(entries.is_empty(), |element| {
-                element.child(notice(
-                    "No items for this class match the current filters.",
-                    MUTED,
-                ))
+                element.child(notice("No equipment matches the current filters.", MUTED))
             })
             .when(page.pages > 1, |list| {
                 list.child(self.pagination(Catalog::Equipment, page, true, cx))
@@ -2529,7 +2544,10 @@ impl Editor {
                     .child(panel().gap_3()
                         .child(self.heading("Pack settings", 28.))
                         .child(self.toggle("trom", "TROM compatibility", compatibility, self.config.trom_compat,
-                            |this| this.config.trom_compat = !this.config.trom_compat, cx))
+                            |this| {
+                                this.config.trom_compat = !this.config.trom_compat;
+                                this.remove_incompatible_equipment();
+                            }, cx))
                         .child(col().gap_2().child(caption("Output folder"))
                             .child(row_ui().gap_2().items_center()
                                 .child(div().flex_1().min_w_0().text_size(px(12.)).text_color(rgb(MUTED)).child(self.output.display().to_string()))

@@ -37,7 +37,7 @@
 | **Identity** | Choose both faction colours from clickable swatches or enter their hex codes. |
 | **Founder** | Set the founder’s name, class, and starting age (18–60) in **Personal details**. Browse playable male and female artwork in **Portrait**. |
 | **Traits** | Browse 84 traits with their icons, gameplay effects, and scopes. Switch between List and Grid and filter by element, Good, or Bad. Choose up to three starting traits, including one physical trait. |
-| **Equipment** | Compare combat stats and character bonuses for weapons, armour, mounts, accessories, and followers. Stats reflect TROM when compatibility is enabled and show separate Romance and Records values where they differ. |
+| **Equipment** | Browse all five equipment slots from the installed game and DLCs, with TROM gear available when compatibility is enabled. Compare combat stats and character bonuses, see Romance and Records differences, and check which items your founder can equip. |
 | **Settlement** | Start at Hepu, one of 23 unoccupied sites, or one of 64 Han Empire settlements. The map displays faction colours and portraits for 24 vanilla warlords. |
 
 Workshop packs can be found by filename or ID, or opened directly from disk. Complete image-only portraits can use their original artwork and unit card with a vanilla female 3D model. Exports that use Workshop artwork list the source pack as a dependency.
@@ -50,7 +50,7 @@ Workshop packs can be found by filename or ID, or opened directly from disk. Com
 | **36 reforms** across community, defence, and patronage. | **36 additional reforms** across raiding, recruitment, and stronghold development. |
 | **Victory** when your chosen patron claims an imperial throne. | **Victory** after using **Sack and Withdraw** in 30 distinct commandery cities. |
 
-For a **Sect**, envoys reveal the seats of active factions at the start. In **Diplomacy → Trade and Marriage**, offer **Make Regular Payments** as the only term. After the warlord accepts, confirm the recipient in **Choose a Patron** on your next turn. Your sect wins if that patron becomes Emperor or Empress. Endow up to five chapters. Each grants 6 Influence immediately and 1 Influence every three turns. Influence grants background income, diplomacy with all factions, faction-wide character satisfaction, and prestige at 25, 75, 150, 225, and 300. Sect ranks end at Duke or Duchess.
+For a **Sect**, envoys reveal the seats of active factions at the start. In **Diplomacy → Trade and Marriage**, offer **Make Regular Payments** as the only term. After the warlord accepts, confirm the recipient in **Choose a Patron** on your next turn. To switch patrons, make a fresh offer to another warlord and confirm them. Existing payment agreements continue under their original terms. Your sect wins if your current patron becomes Emperor or Empress. Endow up to five chapters. Each grants 6 Influence immediately and 1 Influence every three turns. Influence grants background income, diplomacy with all factions, faction-wide character satisfaction, and prestige at 25, 75, 150, 225, and 300. Sect ranks end at Duke or Duchess.
 
 For a **Cult**, each new sack earns 5 Influence. Lose 1 per turn and 5 when a fence's contract expires. At 10, 25, and 50 Influence, gain +5%, +10%, and +20% settlement looting income. Market Fences can offer a five-turn contract after your first sack. Your armies lose campaign movement while the contract is open.
 
@@ -101,7 +101,7 @@ Use `--game` to specify the installation and `--output` to choose an export fold
 | `artSet`, `portraitPack` | Portrait key and optional source pack path. |
 | `subtype`, `startRegion` | Class and supported starting region keys, such as `3k_general_metal` and `3k_main_yizhou_island_capital`. |
 | `startingTraits` | Array of trait keys, such as `3k_main_ceo_trait_personality_brave`. |
-| `startingAncillaries` | Map of slot to item key. See the [starting equipment catalog](src/starting_ancillaries.json). |
+| `startingAncillaries` | Map of slot to item key. Save a project from the editor to get the keys for your selected equipment. |
 
 The equipment map accepts `weapon`, `armour`, `mount`, `accessory`, and `follower`. Older projects can use `extra` for one accessory or follower. The Hepu scenario supplies campaign IDs and the base faction data.
 

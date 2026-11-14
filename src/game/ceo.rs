@@ -7,7 +7,7 @@ use crate::{caab::Document, config::CLASSES};
 
 use super::{Game, Localization, localization, open_pack, raw};
 
-const CEO_DATA: &str = "campaigns/ceo_data.ccd";
+pub(super) const CEO_DATA: &str = "campaigns/ceo_data.ccd";
 const EFFECT_LOC: &str = "text/db/effects__.loc";
 
 impl Game {

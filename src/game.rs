@@ -26,7 +26,7 @@ use uuid::Uuid;
 mod ceo;
 mod equipment;
 mod traits;
-pub use equipment::{EquipmentCatalog, EquipmentStats};
+pub use equipment::{Equipment, EquipmentCatalog, EquipmentStats};
 pub use traits::{Trait, TraitCategory};
 
 pub const MAP_IMAGE: &str = "campaign_maps/3k_dlc07_main_map/3k_main_minimap.png";
