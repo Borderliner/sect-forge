@@ -11,7 +11,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Borderliner/sect-forge/releases/latest"><strong>Download for Windows</strong></a> &nbsp;·&nbsp;
   <a href="#quick-start">Quick start</a> &nbsp;·&nbsp;
+  <a href="#screenshots">Screenshots</a> &nbsp;·&nbsp;
   <a href="#play-a-sect-cult-or-warlord">Campaigns</a> &nbsp;·&nbsp;
   <a href="#build-from-source">Build from source</a> &nbsp;·&nbsp;
   <a href="#versioning">Versioning</a>
@@ -25,9 +27,11 @@
   </tr>
 </table>
 
+![Sect Forge faction editor with custom colours, campaign rules, and a founder preview](docs/media/faction-identity.jpg)
+
 ## Quick start
 
-1. **Set your identity.** Launch `sect-forge.exe`. Sect Forge finds your Steam installation and Workshop packs. Use **Game folder…** to point it at another installation. Name your faction, choose its colours, and select **Sect**, **Cult**, or **Warlord**.
+1. **Set your identity.** Download `sect-forge.exe` from the [latest release](https://github.com/Borderliner/sect-forge/releases/latest) and launch it. Sect Forge finds your Steam installation and Workshop packs. Use **Game folder…** to point it at another installation. Name your faction, choose its colours, and select **Sect**, **Cult**, or **Warlord**.
 2. **Create a founder.** Pick a class, choose a vanilla or Workshop portrait, and set your starting traits and equipment. Each name has a **Reroll** button. The chosen portrait determines the given-name pool and titles like *Brotherhood* or *Sisterhood*.
 3. **Pick a settlement.** Choose a marker on the 190 CE map or search by name, owner, or settlement type. The map shows each available start alongside the vanilla warlords.
 4. **Export the pack.** Open **Review & export**, check the filename and campaign rules, and click **Export mod pack**. The default folder is `%LOCALAPPDATA%\SectForge\mods`. Enable the exported pack in your mod manager and start a fresh 190 CE campaign. **Save project…** stores your editable choices as JSON.
@@ -41,6 +45,29 @@
 | **Settlement** | Start at Hepu, one of 23 unoccupied sites, or one of 64 Han Empire settlements. The map displays faction colours and portraits for 24 vanilla warlords. |
 
 Workshop packs can be found by filename or ID, or opened directly from disk. Complete image-only portraits can use their original artwork and unit card with a vanilla female 3D model. Exports that use Workshop artwork list the source pack as a dependency.
+
+## Screenshots
+
+### Starting settlement
+
+![190 CE map showing historical warlords and available settlements, with Danshui selected](docs/media/starting-settlement.jpg)
+
+<details>
+<summary><strong>Warlord playstyles, founder portraits, and equipment</strong></summary>
+
+### Warlord playstyles
+
+![Warlord playstyle picker showing culture filters and Kong Rong’s Trade Monopoly](docs/media/warlord-playstyles.jpg)
+
+### Founder portraits
+
+![Founder portrait browser showing vanilla portraits and a preview of Diaochan](docs/media/founder-portraits.jpg)
+
+### Starting equipment
+
+![Starting equipment catalog filtered to unique weapons with separate Romance and Records stats](docs/media/founder-equipment.jpg)
+
+</details>
 
 ## Play a Sect, Cult, or Warlord
 
