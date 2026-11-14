@@ -14,6 +14,7 @@ local starting_owner = "__START_OWNER__"
 local starting_building = "__START_BUILDING__"
 local sect_mode = __SECT_MODE__
 local is_cult = __IS_CULT__
+local is_warlord = __IS_WARLORD__
 local hepu = "3k_main_hepu_capital"
 local base_value = faction_key .. "_base"
 local growth_turn = faction_key .. "_growth_turn"
@@ -344,8 +345,9 @@ cm:add_first_tick_callback(function()
         prepare_opening_army(owner, start_preplaced and starting_region ~= hepu)
     end
     reconcile_base()
-    update_influence_effects()
     restore_founder_family_chance(owner)
+    if is_warlord then return end
+    update_influence_effects()
     if not is_cult then establish_initial_contacts(owner) end
     -- Reloading the opening turn must not grant Influence a second time.
     if not cm:get_saved_value(growth_turn) then
@@ -358,7 +360,7 @@ cm:add_first_tick_callback_new(function()
     if owner and not owner:is_null_interface() and not owner:is_dead() then
         set_starting_traits(owner)
         equip_starting_ancillaries(owner)
-        cm:modify_faction(faction_key):set_tech_research_cooldown(0)
+        if not is_warlord then cm:modify_faction(faction_key):set_tech_research_cooldown(0) end
         if not start_preplaced and starting_region ~= hepu then place_starting_city(owner) end
     end
 end)
@@ -370,13 +372,15 @@ core:add_listener(faction_key .. "_single_base", "RegionOwnershipChanged",
     end,
     function(context) queue_reconciliation(context:region():name()) end, true)
 
-core:add_listener(faction_key .. "_followers", "FactionTurnStart",
-    function(context) return context:faction():name() == faction_key end,
-    grow_influence, true)
-
 core:add_listener(faction_key .. "_founder_family", "FactionAboutToEndTurn",
     function(context) return context:faction():name() == faction_key end,
     function(context) restore_founder_family_chance(context:faction()) end, true)
+
+if is_warlord then return end
+
+core:add_listener(faction_key .. "_followers", "FactionTurnStart",
+    function(context) return context:faction():name() == faction_key end,
+    grow_influence, true)
 
 if is_cult then
     core:add_listener(faction_key .. "_raid_reputation", faction_key .. "_raid_completed", true,

@@ -665,6 +665,7 @@ pub fn tree(variant: Variant) -> &'static [[Doctrine; 12]; 3] {
     match variant {
         Variant::Sect => &SECT,
         Variant::Cult => &CULT,
+        Variant::Warlord => unreachable!("Warlords use the selected faction's reforms"),
     }
 }
 
@@ -740,6 +741,7 @@ fn influence_tiers(variant: Variant) -> &'static [InfluenceTier] {
     match variant {
         Variant::Sect => SECT_TIERS,
         Variant::Cult => CULT_TIERS,
+        Variant::Warlord => &[],
     }
 }
 
@@ -752,7 +754,9 @@ pub fn influence_thresholds(variant: Variant) -> String {
 }
 
 pub fn influence_cap(variant: Variant) -> i32 {
-    influence_tiers(variant).last().unwrap().threshold
+    influence_tiers(variant)
+        .last()
+        .map_or(0, |tier| tier.threshold)
 }
 
 fn write_extended_progression(

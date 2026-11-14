@@ -104,7 +104,7 @@ pub fn family_name(current: &str) -> &'static str {
 
 pub fn faction_name(variant: Variant, gender: Option<Gender>, current: &str) -> String {
     let pool = match variant {
-        Variant::Sect => SECT,
+        Variant::Sect | Variant::Warlord => SECT,
         Variant::Cult => CULT,
     };
     let current = faction_title(current, Gender::Male);

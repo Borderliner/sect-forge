@@ -15,7 +15,7 @@ use crate::{
     game::{self, Game, Localization, Row, add, add_loc, add_rows, db_path, field, raw, rows, set},
     portraits::{self, FounderArt},
     startpos::{self, ClassStart, Mode},
-    trom, unlocks,
+    trom, unlocks, warlords,
 };
 
 const BANDIT: &str = "3k_main_faction_zhang_yan";
@@ -57,6 +57,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     let key = config.key();
     let filename = config.filename();
     let cult = config.variant == Variant::Cult;
+    let warlord = config.warlord();
     let mut dependencies = BTreeSet::new();
     let mut pack = game::new_pack(&filename);
     let template = game::template()?;
@@ -65,7 +66,9 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     } else {
         None
     };
-    let technology = if cult {
+    let technology = if cult
+        || warlord.is_some_and(|entry| entry.family == crate::config::WarlordFamily::Bandit)
+    {
         Some(bandit_network(&game.pack, &config.start_region)?)
     } else {
         None
@@ -92,6 +95,10 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         None
     };
     let trom_pack = trom_packs.as_ref().map(|[part, _]| part);
+    let warlord_sources = warlords::Sources::new(&game.pack, trom_pack);
+    let playstyle = warlord
+        .map(|entry| warlord_sources.playstyle(entry))
+        .transpose()?;
     let mut equipment = BTreeMap::new();
     if !config.starting_ancillaries.is_empty() {
         let mut available = game.equipment(trom_packs.as_ref().map(|[a, b]| [a, b]))?;
@@ -171,13 +178,27 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             generated = trom::merge(&raw(trom, &path)?, &generated, mode, &key, &config)
                 .with_context(|| format!("Merge the {} TROM campaign", mode.key()))?;
         }
+        if let Some(warlord) = warlord {
+            generated = warlords::startpos(
+                &raw(trom_pack.unwrap_or(&game.pack), &path)?,
+                &generated,
+                warlord,
+                &key,
+            )
+            .with_context(|| {
+                format!("Apply {}’s {} campaign playstyle", warlord.name, mode.key())
+            })?;
+        }
         add(&mut pack, &path, &generated)?;
     }
 
     report("Writing faction, doctrines, and victory rules");
     let unlocks = unlocks::Sources::new(&game.pack, trom_pack);
-    let permission_group =
-        unlocks::write_recruitment(&unlocks, &mut pack, &template, &config, &key)?;
+    let permission_group = if warlord.is_some() {
+        None
+    } else {
+        unlocks::write_recruitment(&unlocks, &mut pack, &template, &config, &key)?
+    };
     faction_rows(
         &game.pack,
         &template,
@@ -187,17 +208,22 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         &art,
         class.as_ref(),
         permission_group.as_deref(),
+        playstyle.as_ref(),
     )?;
     let mut loc = localization(&config, &key);
     variant(&game.pack, &mut pack, &mut loc, &config, &key)?;
-    campaign_actions::write(&game.pack, &mut pack, &mut loc, config.variant, &key)?;
-    doctrines::write(&game.pack, trom_pack, &mut pack, &mut loc, &config, &key)?;
-    unlocks::write_buildings(&unlocks, &mut pack, &mut loc, &config, &key)?;
-    buildings::write(&unlocks, &mut pack, &mut loc, &config, &key)?;
+    if let Some(entry) = warlord {
+        warlord_sources.write(&mut pack, entry, &key)?;
+    } else {
+        campaign_actions::write(&game.pack, &mut pack, &mut loc, config.variant, &key)?;
+        doctrines::write(&game.pack, trom_pack, &mut pack, &mut loc, &config, &key)?;
+        unlocks::write_buildings(&unlocks, &mut pack, &mut loc, &config, &key)?;
+        buildings::write(&unlocks, &mut pack, &mut loc, &config, &key)?;
+    }
     if let Some(trom) = trom_pack {
         trom::write_supplies_tooltips(&game.pack, trom, &mut pack, &key)?;
     }
-    if !cult {
+    if !cult && warlord.is_none() {
         if let Some(trom) = trom_pack {
             add(
                 &mut pack,
@@ -219,7 +245,11 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     game::save(&mut pack, &staged)?;
     let saved = game::open_pack(&staged)?;
     verify(&pack, &saved)?;
-    buildings::verify(&saved)?;
+    if let Some(playstyle) = &playstyle {
+        warlords::Sources::validate_pack(&saved, playstyle, &key)?;
+    } else {
+        buildings::verify(&saved)?;
+    }
     drop(saved);
     let published = output.join(&filename);
     // The staged file and output are on the same volume.
@@ -357,9 +387,12 @@ fn faction_rows(
     art: &FounderArt,
     class: Option<&Classes>,
     permission_group: Option<&str>,
+    playstyle: Option<&warlords::Playstyle>,
 ) -> Result<()> {
     let cult = config.variant == Variant::Cult;
-    let donor = if cult {
+    let donor = if let Some(playstyle) = playstyle {
+        Some(playstyle.faction.clone())
+    } else if cult {
         Some(
             rows(game, "factions")?
                 .into_iter()
@@ -372,6 +405,19 @@ fn faction_rows(
     let element = config.element();
     let separatists = format!("{BASE_KEY}_separatists");
     for (table, column) in TABLES {
+        if playstyle.is_some()
+            && matches!(
+                table,
+                "building_chain_availabilities"
+                    | "campaign_group_member_criteria_factions"
+                    | "faction_agent_permitted_subtypes"
+                    | "faction_to_name_groups"
+                    | "campaign_map_attrition_faction_immunities"
+                    | "campaign_stances_factions_junctions"
+            )
+        {
+            continue;
+        }
         if cult
             && matches!(
                 table,
@@ -524,7 +570,13 @@ fn faction_rows(
                 }
                 "frontend_factions" => set(row, "playstyle", key),
                 "frontend_faction_leaders" => {
-                    if cult {
+                    if let Some(playstyle) = playstyle {
+                        set(
+                            row,
+                            "starting_progression_level",
+                            playstyle.leader["starting_progression_level"].clone(),
+                        );
+                    } else if cult {
                         set(row, "starting_progression_level", "3k_dlc05_bandit_1");
                     }
                     let colour = CLASSES
@@ -532,12 +584,6 @@ fn faction_rows(
                         .find(|class| class.0 == config.subtype)
                         .unwrap()
                         .2;
-                    set(row, "video", "3k_main_faction_intro_wood");
-                    set(
-                        row,
-                        "loading_screen_intro_video",
-                        "3k_main_faction_intro_wood",
-                    );
                     set(
                         row,
                         "victory_screen_image",
@@ -561,7 +607,7 @@ fn faction_rows(
         "faction_to_faction_groups_junctions",
         key,
         vec![row! {
-            "faction_group_key": if cult { "3k_bandits" } else { "3k_the_coalition" },
+            "faction_group_key": playstyle.map_or(if cult { "3k_bandits" } else { "3k_the_coalition" }, |style| style.group.as_str()),
             "faction_key": key, "optional_campaign_key": CAMPAIGN
         }],
     )?;
@@ -686,6 +732,13 @@ fn variant(
             "Research warband reforms in the Bandit Network and take contracts for new raids.",
             config.variant.objective(),
         ],
+        Variant::Warlord => vec![
+            config
+                .warlord()
+                .context("Missing warlord playstyle")?
+                .description
+                .as_str(),
+        ],
     };
     if config.sect_mode {
         descriptions.push(TERRITORY);
@@ -755,6 +808,11 @@ fn variant(
             }
             "Sack 30 Cities"
         }
+        Variant::Warlord => config
+            .warlord()
+            .context("Missing warlord playstyle")?
+            .focus
+            .as_str(),
     };
     loc.extend([
         (
@@ -818,7 +876,12 @@ fn scripts(
         .collect::<Vec<_>>()
         .join(", ");
     let mut rules = include_str!("script/sect_rules.lua").to_owned();
-    let gains = doctrines::gains(config.variant);
+    let warlord = config.variant == Variant::Warlord;
+    let gains = if warlord {
+        String::new()
+    } else {
+        doctrines::gains(config.variant)
+    };
     let tiers = doctrines::influence_thresholds(config.variant);
     let influence_cap = doctrines::influence_cap(config.variant).to_string();
     for (marker, value) in [
@@ -850,6 +913,7 @@ fn scripts(
         ("__DOCTRINE_GAINS__", gains.as_str()),
         ("__INFLUENCE_TIERS__", tiers.as_str()),
         ("__INFLUENCE_CAP__", influence_cap.as_str()),
+        ("__IS_WARLORD__", if warlord { "true" } else { "false" }),
     ] {
         rules = rules.replace(marker, value);
     }
@@ -858,6 +922,9 @@ fn scripts(
         &format!("script/campaign/mod/{key}_rules.lua"),
         rules.as_bytes(),
     )?;
+    if warlord {
+        return Ok(());
+    }
     let victory = include_str!("script/sect_victory.lua")
         .replace("__FACTION_KEY__", key)
         .replace(

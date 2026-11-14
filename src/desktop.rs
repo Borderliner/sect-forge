@@ -30,7 +30,7 @@ use rpfm_lib::files::{Container, pack::Pack};
 use crate::{
     config::{
         CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MIN_FOUNDER_AGE, SETTLEMENTS, SLOTS, Settlement,
-        Variant, WARLORDS, output_dir,
+        Variant, WARLORDS, WarlordFamily, output_dir,
     },
     export,
     game::{self, EquipmentCatalog, EquipmentStats, Game, MAP_IMAGE, Trait, TraitCategory},
@@ -41,6 +41,7 @@ use crate::{
 mod catalog;
 mod game_font;
 mod name_generator;
+mod warlord_picker;
 use catalog::{Catalog, CatalogPage, RARITIES, TRAIT_CATEGORIES, TraitView};
 use game_font::GameHeadingFont;
 use name_generator::Gender;
@@ -196,6 +197,7 @@ struct Editor {
     zoom: f32,
     map_scroll: ScrollHandle,
     warlords: bool,
+    playstyle_family: WarlordFamily,
     inspecting: Option<String>,
     motion: usize,
     fields: [Entity<InputState>; 5],
@@ -406,6 +408,7 @@ impl Editor {
             zoom: 1.,
             map_scroll: ScrollHandle::new(),
             warlords: true,
+            playstyle_family: WarlordFamily::Han,
             inspecting: None,
             motion: 0,
             fields,
@@ -659,6 +662,9 @@ impl Editor {
                             editor.founder_age.update(cx, |input, cx| {
                                 input.set_value(config.founder_age.to_string(), window, cx);
                             });
+                            if let Some(warlord) = config.warlord() {
+                                editor.playstyle_family = warlord.family;
+                            }
                             editor.config = config;
                             editor.select_source(None);
                             if let Some(path) = source {
@@ -1114,7 +1120,7 @@ impl Editor {
                                     }))
                             }))))
                     .child(panel().gap_4().child(self.heading("Campaign rules", 30.))
-                        .child(row_ui().gap_3().children([Variant::Sect, Variant::Cult].map(|variant| {
+                        .child(row_ui().gap_2().flex_wrap().children([Variant::Sect, Variant::Cult, Variant::Warlord].map(|variant| {
                             let selected = self.config.variant == variant;
                             control(format!("variant-{}", variant.label()), selected).flex_1().min_w_0().h_auto().px_3().py_3()
                                 .flex_col().items_start().gap_1()
@@ -1123,10 +1129,17 @@ impl Editor {
                                     .child(match variant {
                                         Variant::Sect => "Found chapters, raise donations, and back a patron.",
                                         Variant::Cult => "Take raid contracts and expand the Bandit Network.",
+                                        Variant::Warlord => "Lead your own faction with a 190 CE warlord’s playstyle. Some unique campaign panels are experimental.",
                                     }))
-                                .on_click(cx.listener(move |this, _, _, cx| { this.config.variant = variant; this.edited(cx); }))
+                                .on_click(cx.listener(move |this, _, _, cx| { this.select_variant(variant, cx); }))
+                                .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
+                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                        this.select_variant(variant, cx);
+                                    }
+                                }))
                         })))
-                        .child(self.toggle("sect-mode", "Sect Mode", "Hold one commandery and research paid alternatives to imported building materials.", self.config.sect_mode,
+                        .when(self.config.variant == Variant::Warlord, |panel| panel.child(self.warlord_picker(cx)))
+                        .child(self.toggle("sect-mode", "Sect Mode", if self.config.variant == Variant::Warlord { "Limit territorial control to one commandery." } else { "Hold one commandery and research paid alternatives to imported building materials." }, self.config.sect_mode,
                             |this| this.config.sect_mode = !this.config.sect_mode, cx))))
                 .child(self.banner()))
             .into_any_element()
@@ -1240,7 +1253,12 @@ impl Editor {
                             .text_size(px(14.))
                             .child(format!("{} {}", self.config.surname, self.config.forename)),
                     )
-                    .child(body(format!("{place}  ·  {}", self.config.variant.label()))),
+                    .child(body(format!(
+                        "{place}  ·  {}",
+                        self.config
+                            .warlord()
+                            .map_or(self.config.variant.label(), |entry| entry.name.as_str())
+                    ))),
             )
     }
 
@@ -2539,6 +2557,7 @@ impl Editor {
                         .child(summary_line("Faction", self.config.sect_name.clone()))
                         .child(summary_line("Founder", format!("{} {} · {} · Age {}", self.config.surname, self.config.forename, class.1, self.config.founder_age)))
                         .child(summary_line("Settlement", format!("{} · {}", site.name, site.owner_label())))
+                        .when_some(self.config.warlord(), |panel, entry| panel.child(summary_line("Playstyle", format!("{} · {}", entry.name, entry.focus))))
                         .child(summary_line("Victory", self.config.variant.objective().to_owned()))
                         .child(summary_line("Territory", if self.config.sect_mode { "One commandery" } else { "Unlimited" }.into())))
                     .child(panel().gap_3()

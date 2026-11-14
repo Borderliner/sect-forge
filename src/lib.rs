@@ -9,6 +9,7 @@ pub mod portraits;
 mod startpos;
 mod trom;
 mod unlocks;
+mod warlords;
 
 #[cfg(feature = "desktop")]
 pub mod desktop;

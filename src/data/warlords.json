@@ -5,7 +5,11 @@
     "y": 458,
     "primary": "#F08F10",
     "secondary": "#DEA442",
-    "portrait": "mh_hero_special_earth_liu_chong"
+    "portrait": "mh_hero_special_earth_liu_chong",
+    "faction": "3k_dlc04_faction_prince_liu_chong",
+    "family": "han",
+    "focus": "Battlefield trophies",
+    "description": "Complete battlefield feats and field Chen Royal Guard crossbows."
   },
   {
     "name": "Yan Baihu",
@@ -13,7 +17,11 @@
     "y": 338,
     "primary": "#947EA5",
     "secondary": "#CDBDBD",
-    "portrait": "lb_main_hero_special_metal_white_tiger_yan"
+    "portrait": "lb_main_hero_special_metal_white_tiger_yan",
+    "faction": "3k_dlc05_faction_white_tiger_yan",
+    "family": "bandit",
+    "focus": "White Tiger Confederation",
+    "description": "Grow through coalitions and alliances and build Shanyue Camps in minor settlements."
   },
   {
     "name": "Meng Huo",
@@ -21,7 +29,11 @@
     "y": 279,
     "primary": "#BB8620",
     "secondary": "#980505",
-    "portrait": "3k_dlc06_hero_special_meng_huo"
+    "portrait": "3k_dlc06_hero_special_meng_huo",
+    "faction": "3k_dlc06_faction_nanman_king_meng_huo",
+    "family": "nanman",
+    "focus": "Unite the Tribes",
+    "description": "Expand through the south and unite the Nanman tribes through diplomacy or conquest."
   },
   {
     "name": "King Mulu",
@@ -29,7 +41,11 @@
     "y": 209,
     "primary": "#5E6289",
     "secondary": "#C8C8C8",
-    "portrait": "3k_dlc06_hero_special_king_mulu"
+    "portrait": "3k_dlc06_hero_special_king_mulu",
+    "faction": "3k_dlc06_faction_nanman_king_mulu",
+    "family": "nanman",
+    "focus": "Elephants and terrain",
+    "description": "Field elephant troops and fight on terrain that favours the Nanman."
   },
   {
     "name": "King Shamoke",
@@ -37,7 +53,11 @@
     "y": 318,
     "primary": "#635079",
     "secondary": "#A0A0A0",
-    "portrait": "3k_dlc06_hero_special_king_shamoke"
+    "portrait": "3k_dlc06_hero_special_king_shamoke",
+    "faction": "3k_dlc06_faction_nanman_king_shamoke",
+    "family": "nanman",
+    "focus": "Tribal reforms",
+    "description": "Advance the Nanman reforms and recruit warriors who fight with blowpipes and shields."
   },
   {
     "name": "Lady Zhurong",
@@ -45,7 +65,11 @@
     "y": 265,
     "primary": "#A45114",
     "secondary": "#C69C30",
-    "portrait": "3k_dlc06_hero_special_lady_zhurong"
+    "portrait": "3k_dlc06_hero_special_lady_zhurong",
+    "faction": "3k_dlc06_faction_nanman_lady_zhurong",
+    "family": "nanman",
+    "focus": "Tigers and expansion",
+    "description": "Field tiger warriors and use the rhythm of the campaign to plan expansion."
   },
   {
     "name": "Cao Cao",
@@ -53,7 +77,11 @@
     "y": 445,
     "primary": "#303B75",
     "secondary": "#CDBDBD",
-    "portrait": "3k_main_hero_special_earth_cao_cao"
+    "portrait": "3k_main_hero_special_earth_cao_cao",
+    "faction": "3k_main_faction_cao_cao",
+    "family": "han",
+    "focus": "Credibility and Schemes",
+    "description": "Use political leverage and field Tiger and Leopard Cavalry backed by farming garrisons."
   },
   {
     "name": "Dong Zhuo",
@@ -61,7 +89,11 @@
     "y": 475,
     "primary": "#272021",
     "secondary": "#A60D0D",
-    "portrait": "3k_main_hero_special_fire_dong_zhuo"
+    "portrait": "3k_main_hero_special_fire_dong_zhuo",
+    "faction": "3k_main_faction_dong_zhuo",
+    "family": "han",
+    "focus": "Intimidation",
+    "description": "Coerce rivals, raze settlements, and raise Xiliang Cavalry."
   },
   {
     "name": "Gongsun Zan",
@@ -69,7 +101,11 @@
     "y": 606,
     "primary": "#F1E1E1",
     "secondary": "#323232",
-    "portrait": "3k_main_hero_special_fire_gongsun_zan"
+    "portrait": "3k_main_hero_special_fire_gongsun_zan",
+    "faction": "3k_main_faction_gongsun_zan",
+    "family": "han",
+    "focus": "Military Government",
+    "description": "Run a military administration and field White Horse mounted archers."
   },
   {
     "name": "Kong Rong",
@@ -77,7 +113,11 @@
     "y": 526,
     "primary": "#3149A7",
     "secondary": "#967832",
-    "portrait": "3k_main_hero_special_water_kong_rong"
+    "portrait": "3k_main_hero_special_water_kong_rong",
+    "faction": "3k_main_faction_kong_rong",
+    "family": "han",
+    "focus": "Trade Monopoly",
+    "description": "Build a wealthy state around trade and population with Academies of Culture and elite crossbows."
   },
   {
     "name": "Liu Bei",
@@ -85,7 +125,11 @@
     "y": 504,
     "primary": "#619F4C",
     "secondary": "#323232",
-    "portrait": "3k_main_hero_special_earth_liu_bei"
+    "portrait": "3k_main_hero_special_earth_liu_bei",
+    "faction": "3k_main_faction_liu_bei",
+    "family": "han",
+    "focus": "Unity",
+    "description": "Unify factions, integrate Han settlements, and recruit Yi archers."
   },
   {
     "name": "Liu Biao",
@@ -93,7 +137,11 @@
     "y": 401,
     "primary": "#3FBABC",
     "secondary": "#EAD360",
-    "portrait": "3k_main_hero_special_earth_liu_biao"
+    "portrait": "3k_main_hero_special_earth_liu_biao",
+    "faction": "3k_main_faction_liu_biao",
+    "family": "han",
+    "focus": "Governance",
+    "description": "Develop your court and administrators with Court Scholars, Lodging, and Jing infantry."
   },
   {
     "name": "Liu Yan",
@@ -101,7 +149,11 @@
     "y": 379,
     "primary": "#CD974E",
     "secondary": "#967832",
-    "portrait": "3k_dlc07_hero_special_water_liu_yan"
+    "portrait": "3k_dlc07_hero_special_water_liu_yan",
+    "faction": "3k_main_faction_liu_yan",
+    "family": "han",
+    "focus": "Inheritance and Aspiration",
+    "description": "Build a legacy for your successor and field Dongzhoubing defenders and marksmen."
   },
   {
     "name": "Ma Teng",
@@ -109,7 +161,11 @@
     "y": 481,
     "primary": "#C06B75",
     "secondary": "#EAD360",
-    "portrait": "3k_main_hero_special_fire_ma_teng"
+    "portrait": "3k_main_hero_special_fire_ma_teng",
+    "faction": "3k_main_faction_ma_teng",
+    "family": "han",
+    "focus": "Xiliang Supply Lines",
+    "description": "Forage to support long campaigns and deploy Qiang cavalry."
   },
   {
     "name": "Shi Xie",
@@ -117,7 +173,11 @@
     "y": 157,
     "primary": "#5195BB",
     "secondary": "#AEA2DC",
-    "portrait": "3k_dlc06_hero_special_water_shi_xie"
+    "portrait": "3k_dlc06_hero_special_water_shi_xie",
+    "faction": "3k_main_faction_shi_xie",
+    "family": "han",
+    "focus": "Splendour and tribute",
+    "description": "Build a family-led court and use the prestige of your relatives to support the faction."
   },
   {
     "name": "Sun Jian",
@@ -125,7 +185,11 @@
     "y": 359,
     "primary": "#C5312D",
     "secondary": "#D7C8B0",
-    "portrait": "3k_main_hero_special_metal_sun_jian"
+    "portrait": "3k_main_hero_special_metal_sun_jian",
+    "faction": "3k_main_faction_sun_jian",
+    "family": "han",
+    "focus": "Heroism",
+    "description": "Win battles and expand using Mercenary Outposts and rapidly deployed mercenary retinues."
   },
   {
     "name": "Tao Qian",
@@ -133,7 +197,11 @@
     "y": 469,
     "primary": "#2B3A6C",
     "secondary": "#967832",
-    "portrait": "3k_main_hero_special_water_tao_qian"
+    "portrait": "3k_main_hero_special_water_tao_qian",
+    "faction": "3k_main_faction_tao_qian",
+    "family": "han",
+    "focus": "Economic development",
+    "description": "Build a prosperous heartland defended by territorial spearmen and archers."
   },
   {
     "name": "Gong Du",
@@ -141,7 +209,11 @@
     "y": 460,
     "primary": "#C9893D",
     "secondary": "#000000",
-    "portrait": "3k_ytr_hero_special_veteran_gong_du"
+    "portrait": "3k_ytr_hero_special_veteran_gong_du",
+    "faction": "3k_main_faction_yellow_turban_anding",
+    "family": "yellow_turban",
+    "focus": "Land and plunder",
+    "description": "Loot defeated enemies and supply the rebellion from Hidden Forts."
   },
   {
     "name": "He Yi",
@@ -149,7 +221,11 @@
     "y": 404,
     "primary": "#E4C155",
     "secondary": "#AEA2DC",
-    "portrait": "3k_ytr_hero_special_healer_he_yi"
+    "portrait": "3k_ytr_hero_special_healer_he_yi",
+    "faction": "3k_main_faction_yellow_turban_rebels",
+    "family": "yellow_turban",
+    "focus": "People and healing",
+    "description": "Build Healer’s Lodges to grow the population and replenish armies."
   },
   {
     "name": "Huang Shao",
@@ -157,7 +233,11 @@
     "y": 526,
     "primary": "#3F313F",
     "secondary": "#000000",
-    "portrait": "3k_ytr_hero_special_scholar_huang_shao"
+    "portrait": "3k_ytr_hero_special_scholar_huang_shao",
+    "faction": "3k_main_faction_yellow_turban_taishan",
+    "family": "yellow_turban",
+    "focus": "Heaven and scholarship",
+    "description": "Study Yellow Turban reforms and use gardens to keep characters and settlements content."
   },
   {
     "name": "Yuan Shao",
@@ -165,7 +245,11 @@
     "y": 521,
     "primary": "#8A633C",
     "secondary": "#C9B9A2",
-    "portrait": "3k_main_hero_special_earth_yuan_shao"
+    "portrait": "3k_main_hero_special_earth_yuan_shao",
+    "faction": "3k_main_faction_yuan_shao",
+    "family": "han",
+    "focus": "Lineage and captains",
+    "description": "Build alliances and field captain retinues with elite Hebei infantry."
   },
   {
     "name": "Yuan Shu",
@@ -173,7 +257,11 @@
     "y": 435,
     "primary": "#D05939",
     "secondary": "#DCA078",
-    "portrait": "3k_main_hero_special_earth_yuan_shu"
+    "portrait": "3k_main_hero_special_earth_yuan_shu",
+    "faction": "3k_main_faction_yuan_shu",
+    "family": "han",
+    "focus": "Legitimacy",
+    "description": "Seek recognition from other rulers and use the Zhong Administration to finance your claim."
   },
   {
     "name": "Zhang Yan",
@@ -181,7 +269,11 @@
     "y": 589,
     "primary": "#2A714C",
     "secondary": "#AEA2DC",
-    "portrait": "3k_main_hero_special_wood_zhang_yan"
+    "portrait": "3k_main_hero_special_wood_zhang_yan",
+    "faction": "3k_main_faction_zhang_yan",
+    "family": "bandit",
+    "focus": "Black Mountain bandits",
+    "description": "Ambush rivals and recruit Black Mountain outlaws from your bandit network."
   },
   {
     "name": "Zheng Jiang",
@@ -189,6 +281,10 @@
     "y": 543,
     "primary": "#238E1C",
     "secondary": "#DBDBDB",
-    "portrait": "3k_main_hero_special_wood_zheng_jiang"
+    "portrait": "3k_main_hero_special_wood_zheng_jiang",
+    "faction": "3k_main_faction_zheng_jiang",
+    "family": "bandit",
+    "focus": "Infamy and tribute",
+    "description": "Build a reputation through conquest and squeeze tributaries through Tribute Halls."
   }
 ]

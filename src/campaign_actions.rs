@@ -132,6 +132,7 @@ pub fn write(
     let dilemmas = match variant {
         Variant::Sect => SECT,
         Variant::Cult => CULT,
+        Variant::Warlord => return Ok(()),
     };
     let suffix = format!("{key}_campaign_actions");
     let mut definitions = Vec::new();

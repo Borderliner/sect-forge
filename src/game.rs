@@ -279,7 +279,53 @@ pub fn add_rows(pack: &mut Pack, table: &str, suffix: &str, rows: Vec<Row>) -> R
                 .max_by_key(|def| def.version())
         })
         .with_context(|| format!("No database schema for {table}"))?;
-    let mut db = DB::new(definition, None, &name);
+    write_db_rows(pack, table, suffix, rows, DB::new(definition, None, &name))
+}
+
+pub(crate) fn add_rows_like(
+    pack: &mut Pack,
+    table: &str,
+    suffix: &str,
+    rows: Vec<Row>,
+    source: &Pack,
+    path: &str,
+) -> Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let RFileDecoded::DB(source) = decoded(source, path)? else {
+        anyhow::bail!("{path} is not a database table");
+    };
+    let db = DB::new(source.definition(), None, &format!("{table}_tables"));
+    write_db_rows(pack, table, suffix, rows, db)
+}
+
+pub(crate) fn row_keys(source: &Pack, path: &str) -> Result<Vec<String>> {
+    let RFileDecoded::DB(db) = decoded(source, path)? else {
+        anyhow::bail!("{path} is not a database table");
+    };
+    Ok(db
+        .definition()
+        .fields_processed()
+        .into_iter()
+        .filter(|field| field.is_key(None))
+        .map(|field| field.name().to_owned())
+        .collect())
+}
+
+pub(crate) fn table_is_empty(source: &Pack, path: &str) -> Result<bool> {
+    let bytes = raw(source, path)?;
+    Ok(DB::read_header(&mut std::io::Cursor::new(bytes))?.3 == 0)
+}
+
+fn write_db_rows(
+    pack: &mut Pack,
+    table: &str,
+    suffix: &str,
+    rows: Vec<Row>,
+    mut db: DB,
+) -> Result<()> {
+    let definition = db.definition();
     let columns: BTreeMap<_, _> = definition
         .fields_processed()
         .iter()

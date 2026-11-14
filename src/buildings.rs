@@ -52,6 +52,7 @@ pub fn write(
     let (city, county) = match config.variant {
         Variant::Sect => (&SECT_HALL, &SECT_SHRINE),
         Variant::Cult => (&CULT_MARKET, &CULT_STASH),
+        Variant::Warlord => return Ok(()),
     };
     let suffix = format!("{key}_founder_buildings");
     if config.variant == Variant::Sect {
@@ -397,6 +398,7 @@ fn level_effects(
         ],
         (Variant::Cult, false) => [(banditry, building, tier * 70), (supplies, "region_to_province_own_unseen", tier * 3)],
         (Variant::Cult, true) => [(banditry, building, tier * 25), (supplies, "region_to_province_own_unseen", tier)],
+        (Variant::Warlord, _) => unreachable!("Warlords use the selected faction's buildings"),
     }.map(|(effect, scope, value)| row! {"campaign_group": group, "effect": effect, "effect_scope": scope,
         "value": value, "value_damaged": value / 2, "value_ruined": 0, "value_resource_permission_lost": 0})
 }

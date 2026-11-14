@@ -34,6 +34,7 @@ pub enum Variant {
     #[default]
     Sect,
     Cult,
+    Warlord,
 }
 
 impl Variant {
@@ -41,6 +42,7 @@ impl Variant {
         match self {
             Self::Sect => "Sect",
             Self::Cult => "Cult",
+            Self::Warlord => "Warlord",
         }
     }
 
@@ -48,6 +50,7 @@ impl Variant {
         match self {
             Self::Sect => "Win when your chosen patron claims an imperial throne.",
             Self::Cult => "Sack and withdraw from 30 different commandery cities.",
+            Self::Warlord => "Follow the selected faction’s campaign progression.",
         }
     }
 }
@@ -82,6 +85,8 @@ pub struct Config {
     pub trom_compat: bool,
     #[serde(default)]
     pub variant: Variant,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warlord: Option<String>,
 }
 
 fn default_founder_age() -> u8 {
@@ -117,6 +122,7 @@ impl Default for Config {
             sect_mode: true,
             trom_compat: false,
             variant: Variant::Sect,
+            warlord: None,
         }
     }
 }
@@ -175,6 +181,15 @@ impl Config {
             .find(|site| site.key == self.start_region)
     }
 
+    pub fn warlord(&self) -> Option<&'static Warlord> {
+        if self.variant != Variant::Warlord {
+            return None;
+        }
+        WARLORDS
+            .iter()
+            .find(|entry| Some(&entry.faction) == self.warlord.as_ref())
+    }
+
     pub fn validated(mut self) -> Result<Self> {
         ensure!(
             (MIN_FOUNDER_AGE..=MAX_FOUNDER_AGE).contains(&self.founder_age),
@@ -204,6 +219,10 @@ impl Config {
             "Invalid faction key {key}."
         );
         self.faction_key = Some(key);
+        ensure!(
+            self.variant != Variant::Warlord || self.warlord().is_some(),
+            "Choose a 190 CE warlord playstyle."
+        );
         ensure!(
             CLASSES.iter().any(|class| class.0 == self.subtype),
             "Choose a founder class."
@@ -292,6 +311,30 @@ pub struct Warlord {
     pub primary: String,
     pub secondary: String,
     pub portrait: String,
+    pub faction: String,
+    pub family: WarlordFamily,
+    pub focus: String,
+    pub description: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WarlordFamily {
+    Han,
+    Bandit,
+    YellowTurban,
+    Nanman,
+}
+
+impl WarlordFamily {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Han => "Han",
+            Self::Bandit => "Bandit",
+            Self::YellowTurban => "Yellow Turban",
+            Self::Nanman => "Nanman",
+        }
+    }
 }
 
 pub static SETTLEMENTS: LazyLock<Vec<Settlement>> = LazyLock::new(|| {

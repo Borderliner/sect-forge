@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> &nbsp;·&nbsp;
-  <a href="#play-a-sect-or-cult">Campaigns</a> &nbsp;·&nbsp;
+  <a href="#play-a-sect-cult-or-warlord">Campaigns</a> &nbsp;·&nbsp;
   <a href="#build-from-source">Build from source</a> &nbsp;·&nbsp;
   <a href="#versioning">Versioning</a>
 </p>
@@ -21,13 +21,13 @@
   <tr>
     <td align="center"><strong>88</strong><br>Starting settlements</td>
     <td align="center"><strong>84</strong><br>Founder traits</td>
-    <td align="center"><strong>2</strong><br>Campaign variants</td>
+    <td align="center"><strong>24</strong><br>Warlord playstyles</td>
   </tr>
 </table>
 
 ## Quick start
 
-1. **Set your identity.** Launch `sect-forge.exe`. Sect Forge finds your Steam installation and Workshop packs. Use **Game folder…** to point it at another installation. Name your faction, choose its colours, and select **Sect** or **Cult**.
+1. **Set your identity.** Launch `sect-forge.exe`. Sect Forge finds your Steam installation and Workshop packs. Use **Game folder…** to point it at another installation. Name your faction, choose its colours, and select **Sect**, **Cult**, or **Warlord**.
 2. **Create a founder.** Pick a class, choose a vanilla or Workshop portrait, and set your starting traits and equipment. Each name has a **Reroll** button. The chosen portrait determines the given-name pool and titles like *Brotherhood* or *Sisterhood*.
 3. **Pick a settlement.** Choose a marker on the 190 CE map or search by name, owner, or settlement type. The map shows each available start alongside the vanilla warlords.
 4. **Export the pack.** Open **Review & export**, check the filename and campaign rules, and click **Export mod pack**. The default folder is `%LOCALAPPDATA%\SectForge\mods`. Enable the exported pack in your mod manager and start a fresh 190 CE campaign. **Save project…** stores your editable choices as JSON.
@@ -42,7 +42,11 @@
 
 Workshop packs can be found by filename or ID, or opened directly from disk. Complete image-only portraits can use their original artwork and unit card with a vanilla female 3D model. Exports that use Workshop artwork list the source pack as a dependency.
 
-## Play a Sect or Cult
+## Play a Sect, Cult, or Warlord
+
+Choose **Warlord** under **Campaign rules** to browse 24 playstyles across the Han, Bandit, Yellow Turban, and Nanman families. The generated 190 CE campaign gives your founder a new faction with the selected warlord’s culture, recruitment permissions, reforms, building access, and faction rules. The historical warlord keeps their faction on the map. Warlord campaigns require the DLC that supplies the selected mechanics.
+
+Warlord playstyles are experimental. Campaign starts have been checked through export in vanilla and TROM. Some faction-specific panels and scripted actions still need in-game verification.
 
 | **Sect** | **Cult** |
 | --- | --- |
@@ -58,9 +62,9 @@ Sects can upgrade a **Meeting Hall** for recurring Sect Influence and culture in
 
 ### Sect Mode
 
-Sect Mode is on by default for both variants. You can hold every settlement in one commandery. Acquiring territory in another moves your base and leaves your old holdings as ruins. **Supply Contracts** or **Smuggler Contracts** unlock upgrades that bypass material requirements for a higher construction cost while keeping settlement and slot requirements.
+Sect Mode is on by default for Sect and Cult campaigns. You can hold every settlement in one commandery. Acquiring territory in another moves your base and leaves your old holdings as ruins. **Supply Contracts** or **Smuggler Contracts** unlock upgrades that bypass material requirements for a higher construction cost while keeping settlement and slot requirements.
 
-Turn Sect Mode off for unrestricted expansion and normal building resource requirements. Both settings use reforms to unlock advanced buildings and recruits. In TROM, a Sect using Sect Mode can research alternate access to selected standard elite units while keeping their class and skill requirements.
+Turn Sect Mode off for unrestricted expansion and normal building resource requirements. Both settings use reforms to unlock advanced buildings and recruits. In TROM, a Sect using Sect Mode can research alternate access to selected standard elite units while keeping their class and skill requirements. Warlord campaigns default to unrestricted expansion and use their own building requirements in either setting.
 
 ### TROM 5.2
 
@@ -94,7 +98,8 @@ Use `--game` to specify the installation and `--output` to choose an export fold
 
 | JSON field | Value |
 | --- | --- |
-| `variant` | `"sect"` or `"cult"`. Defaults to `"sect"`. |
+| `variant` | `"sect"`, `"cult"`, or `"warlord"`. Defaults to `"sect"`. |
+| `warlord` | Source faction key for `"warlord"`, such as `"3k_main_faction_kong_rong"`. |
 | `sectMode` | `true` for the one-commandery rules. Defaults to `true`. |
 | `tromCompat` | `true` to build against TROM 5.2. |
 | `founderAge` | Starting age in years, from 18 to 60. Defaults to 18 when omitted. |
