@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use crate::{
     buildings, campaign_actions,
-    config::{BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, SLOTS, Variant},
-    doctrines,
+    config::{BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, SLOTS, Settlement, Variant},
+    doctrines, expanded,
     game::{self, Game, Localization, Row, add, add_loc, add_rows, db_path, field, raw, rows, set},
     portraits::{self, FounderArt},
     startpos::{self, ClassStart, Mode},
@@ -59,6 +59,28 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     let cult = config.variant == Variant::Cult;
     let warlord = config.warlord();
     let mut dependencies = BTreeSet::new();
+    let expanded_pack = if config.expanded_compat {
+        report("Reading 190 Expanded’s Extra Regions");
+        let paths = expanded::packs(&game::workshop_packs())?;
+        dependencies.extend(
+            paths
+                .iter()
+                .filter_map(|path| path.file_name())
+                .map(|name| name.to_string_lossy().into_owned()),
+        );
+        Some(game::open_pack(&paths[0])?)
+    } else {
+        None
+    };
+    let expanded_sites = expanded_pack.as_ref().map(expanded::catalog).transpose()?;
+    let site = match &expanded_sites {
+        Some(map) => map
+            .sites
+            .iter()
+            .find(|site| site.key == config.start_region),
+        None => config.settlement(),
+    }
+    .context("Choose an eligible starting settlement in the selected 190 CE campaign.")?;
     let mut pack = game::new_pack(&filename);
     let template = game::template()?;
     let class = if config.subtype != CLASSES[0].0 {
@@ -69,7 +91,11 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     let technology = if cult
         || warlord.is_some_and(|entry| entry.family == crate::config::WarlordFamily::Bandit)
     {
-        Some(bandit_network(&game.pack, &config.start_region)?)
+        if config.expanded_compat && config.settlement().is_none() {
+            None
+        } else {
+            Some(bandit_network(&game.pack, &config.start_region)?)
+        }
     } else {
         None
     };
@@ -160,6 +186,10 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             .map(String::as_str),
     )?;
 
+    let mut donor_config = config.clone();
+    if config.expanded_compat {
+        donor_config.start_region = HEPU.into();
+    }
     for mode in Mode::ALL {
         report(&format!("Writing the {} campaign start", mode.key()));
         let path = format!("campaigns/{CAMPAIGN}/startpos_{}.esf", mode.key());
@@ -167,7 +197,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         let mut generated = startpos::customize(
             &raw(&template, &path)?,
             mode,
-            &config,
+            &donor_config,
             &key,
             &art,
             class_start,
@@ -178,9 +208,16 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             generated = trom::merge(&raw(trom, &path)?, &generated, mode, &key, &config)
                 .with_context(|| format!("Merge the {} TROM campaign", mode.key()))?;
         }
+        if let Some(expanded) = &expanded_pack {
+            generated = expanded::merge(expanded, &generated, mode, &key, site)
+                .with_context(|| format!("Merge the {} 190 Expanded campaign", mode.key()))?;
+        }
         if let Some(warlord) = warlord {
             generated = warlords::startpos(
-                &raw(trom_pack.unwrap_or(&game.pack), &path)?,
+                &raw(
+                    trom_pack.or(expanded_pack.as_ref()).unwrap_or(&game.pack),
+                    &path,
+                )?,
                 &generated,
                 warlord,
                 &key,
@@ -204,13 +241,14 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         &template,
         &mut pack,
         &config,
+        site,
         &key,
         &art,
         class.as_ref(),
         permission_group.as_deref(),
         playstyle.as_ref(),
     )?;
-    let mut loc = localization(&config, &key);
+    let mut loc = localization(&config, site, &key);
     variant(&game.pack, &mut pack, &mut loc, &config, &key)?;
     if let Some(entry) = warlord {
         warlord_sources.write(&mut pack, entry, &key)?;
@@ -232,7 +270,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             )?;
         }
     }
-    scripts(&mut pack, &config, &key, &equipment)?;
+    scripts(&mut pack, &config, site, &key, &equipment)?;
     add_loc(&mut pack, &format!("text/db/{key}.loc"), loc)?;
     pack.set_dependencies(dependencies.into_iter().map(|name| (true, name)).collect());
 
@@ -383,6 +421,7 @@ fn faction_rows(
     template: &Pack,
     pack: &mut Pack,
     config: &Config,
+    site: &Settlement,
     key: &str,
     art: &FounderArt,
     class: Option<&Classes>,
@@ -590,7 +629,6 @@ fn faction_rows(
                         format!("ui/post_campaign_background/campaign_victory_{colour}.png"),
                     );
                     if config.start_region != HEPU {
-                        let site = config.settlement().unwrap();
                         set(row, "override_force_location_x", site.x);
                         set(row, "override_force_location_y", site.y);
                     }
@@ -637,9 +675,9 @@ fn faction_rows(
     )
 }
 
-fn localization(config: &Config, key: &str) -> Localization {
+fn localization(config: &Config, site: &Settlement, key: &str) -> Localization {
     let name = &config.sect_name;
-    let site = &config.settlement().unwrap().name;
+    let site = &site.name;
     let mut loc = BTreeMap::from([
         ("names_name_1900000001".into(), config.forename.clone()),
         ("names_name_1900000002".into(), config.surname.clone()),
@@ -846,6 +884,7 @@ fn variant(
 fn scripts(
     pack: &mut Pack,
     config: &Config,
+    site: &Settlement,
     key: &str,
     selected: &game::EquipmentCatalog,
 ) -> Result<()> {
@@ -854,7 +893,6 @@ fn scripts(
         &format!("script/campaign/three_kingdoms_early/factions/{key}/{key}_start.lua"),
         b"-- Campaign initialization is registered by the Sect Forge campaign rules.\n",
     )?;
-    let site = config.settlement().unwrap();
     let traits = config
         .starting_traits
         .iter()
@@ -891,7 +929,11 @@ fn scripts(
         ("__START_REGION__", site.key.as_str()),
         (
             "__START_PREPLACED__",
-            if config.trom_compat { "true" } else { "false" },
+            if config.trom_compat || config.expanded_compat {
+                "true"
+            } else {
+                "false"
+            },
         ),
         ("__START_OWNER__", if site.han { HAN } else { "rebels" }),
         (

@@ -3,6 +3,7 @@ mod caab;
 mod campaign_actions;
 pub mod config;
 mod doctrines;
+mod expanded;
 pub mod export;
 pub mod game;
 pub mod portraits;

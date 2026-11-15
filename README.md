@@ -7,7 +7,7 @@
 <p align="center"><strong>Create a playable faction for Total War: THREE KINGDOMS.</strong></p>
 
 <p align="center">
-  Windows desktop editor &nbsp;·&nbsp; 190 CE &nbsp;·&nbsp; Romance and Records &nbsp;·&nbsp; Vanilla and TROM 5.2
+  Windows desktop editor &nbsp;·&nbsp; 190 CE &nbsp;·&nbsp; Romance and Records &nbsp;·&nbsp; Vanilla, TROM 5.2, and 190 Expanded
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@
 | **Founder** | Set the founder’s name, class, and starting age (18–60) in **Personal details**. Browse playable male and female artwork in **Portrait**. |
 | **Traits** | Browse 84 traits with their icons, gameplay effects, and scopes. Switch between List and Grid and filter by element, Good, or Bad. Choose up to three starting traits, including one physical trait. |
 | **Equipment** | Browse all five equipment slots from the installed game and DLCs, with TROM gear available when compatibility is enabled. Compare combat stats and character bonuses, see Romance and Records differences, and check which items your founder can equip. |
-| **Settlement** | Start at Hepu, one of 23 unoccupied sites, or one of 64 Han Empire settlements. The map displays faction colours and portraits for 24 vanilla warlords. |
+| **Settlement** | Browse 88 base-game starts or open the installed 190 Expanded map to choose eligible settlements in Korea and the northwest. |
 
 Workshop packs can be found by filename or ID, or opened directly from disk. Complete image-only portraits can use their original artwork and unit card with a vanilla female 3D model. Exports that use Workshop artwork list the source pack as a dependency.
 
@@ -98,6 +98,14 @@ Turn Sect Mode off for unrestricted expansion and normal building resource requi
 Install both TROM Workshop parts and select **TROM compatibility · 5.2** in **Review & export**. Enable the generated `!sects_<name>_trom.pack` above both parts in your mod manager. Sect Forge checks TROM Part 1's 190 CE start positions and places the faction in its selected settlement in both campaign modes.
 
 Enable one generated faction pack at a time. Other mods that replace the same campaign start or research screen can conflict. Close the game before overwriting an existing pack.
+
+### 190 Expanded
+
+Install both [190 Expanded’s Extra Regions](https://steamcommunity.com/sharedfiles/filedetails/?id=3240150507) and [190 Expanded Factions & Characters](https://steamcommunity.com/sharedfiles/filedetails/?id=2875547086), along with their Workshop requirements. Turn on **190 Expanded compatibility** on **Starting settlement** or **Review & export**. The picker uses the installed map and offers eligible Han, unoccupied, and rebel-held settlements in Korea, the northwest, and the rest of the expanded campaign.
+
+![The 190 Expanded settlement picker with Pyongyang selected on the Korean Peninsula](docs/media/190-expanded-map.jpg)
+
+Place the generated `!!!sects_<name>_190_expanded.pack` above **Extra Regions** and **Factions & Characters** in your 190 Expanded load order. Start a new 190 CE campaign. 190 Expanded and TROM are distinct campaign bases.
 
 ## Build from source
 

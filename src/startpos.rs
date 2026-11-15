@@ -29,7 +29,11 @@ pub(crate) fn map_position(site: &Settlement) -> (f32, f32) {
     (x, y)
 }
 
-fn place_frontend_marker(bytes: Vec<u8>, key: &str, site: &Settlement) -> Result<Vec<u8>> {
+pub(crate) fn place_frontend_marker(
+    bytes: Vec<u8>,
+    key: &str,
+    site: &Settlement,
+) -> Result<Vec<u8>> {
     if site.key == HEPU {
         return Ok(bytes);
     }

@@ -136,7 +136,9 @@ pub(super) fn place(
     let region_id = doc.id(&fields[0])?;
     let faction_id = doc.id(&faction.fields()[0])?;
     let previous_owner_id = doc.id(&fields[7])?;
-    let previous_owner = if site.key == HEPU {
+    let previous_owner = if let Some(owner) = &site.owner {
+        owner
+    } else if site.key == HEPU {
         SHI_XIE
     } else if site.han {
         HAN
@@ -146,7 +148,7 @@ pub(super) fn place(
     let roster = doc.group("REGION_OWNERSHIPS", 0, &site.key)?;
     ensure!(
         doc.text(&roster[1]) == Some(previous_owner),
-        "{} has a different owner in TROM's 190 CE campaign",
+        "{} has a different owner in the selected 190 CE campaign",
         site.name
     );
     if previous_owner != "rebels" {
@@ -155,7 +157,27 @@ pub(super) fn place(
             doc.id(&owner.fields()[0])? == previous_owner_id,
             "Starting settlement owner differs from the campaign roster"
         );
-        let count = &owner.fields()[if site.key == HEPU { 32 } else { 30 }];
+        let count = if site.owner.is_some() {
+            let fields = owner.fields();
+            let flag = fields
+                .iter()
+                .position(|field| doc.name(field) == "FACTION_FLAG_AND_COLOURS")
+                .context("Missing previous owner's flag record")?;
+            let count = &fields[flag + 5];
+            let owned = doc
+                .one(&doc.root, "REGION_OWNERSHIPS")?
+                .groups
+                .iter()
+                .filter(|group| doc.text(&group[1]) == Some(previous_owner))
+                .count();
+            ensure!(
+                doc.id(count)? as usize == owned,
+                "Unexpected region count for {previous_owner}"
+            );
+            count
+        } else {
+            &owner.fields()[if site.key == HEPU { 32 } else { 30 }]
+        };
         let remaining = doc
             .id(count)?
             .checked_sub(1)

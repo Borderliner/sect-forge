@@ -32,7 +32,7 @@ use crate::{
         CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MIN_FOUNDER_AGE, SETTLEMENTS, SLOTS, Settlement,
         Variant, WARLORDS, WarlordFamily, output_dir,
     },
-    export,
+    expanded, export,
     game::{self, EquipmentCatalog, EquipmentStats, Game, MAP_IMAGE, Trait, TraitCategory},
     portraits::{self, Portrait},
     trom,
@@ -122,6 +122,11 @@ struct Source {
     portraits: Vec<Portrait>,
 }
 
+struct ExpandedMap {
+    map: expanded::CampaignMap,
+    art: usize,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Identity,
@@ -170,6 +175,8 @@ struct Editor {
     artwork: Artwork,
     heading_font: Option<GameHeadingFont>,
     library: Option<Library>,
+    expanded_map: Option<Result<ExpandedMap, String>>,
+    expanded_loading: bool,
     source: Option<Arc<Source>>,
     selected_source: Option<Arc<Source>>,
     workshop: Vec<PathBuf>,
@@ -381,6 +388,8 @@ impl Editor {
             artwork,
             heading_font,
             library: None,
+            expanded_map: None,
+            expanded_loading: false,
             source: None,
             selected_source: None,
             workshop: Vec::new(),
@@ -482,6 +491,10 @@ impl Editor {
                                 }
                             }
                             editor.workshop = workshop;
+                            if let Some(Ok(map)) = editor.expanded_map.take() {
+                                editor.artwork.discard(map.art);
+                            }
+                            editor.load_expanded(cx);
                             if let Some(path) = editor.config.portrait_pack.clone() {
                                 editor.load_source(path, cx);
                             }
@@ -666,6 +679,7 @@ impl Editor {
                                 editor.playstyle_family = warlord.family;
                             }
                             editor.config = config;
+                            editor.load_expanded(cx);
                             editor.select_source(None);
                             if let Some(path) = source {
                                 editor.load_source(path, cx);
@@ -808,6 +822,125 @@ impl Editor {
         let data = self.library.as_ref()?;
         data.game.pack.file(path, true)?;
         Some(asset(data.art_id, path))
+    }
+
+    fn campaign_map_art(&self) -> Option<String> {
+        if self.config.expanded_compat {
+            self.expanded_map
+                .as_ref()?
+                .as_ref()
+                .ok()
+                .map(|map| asset(map.art, MAP_IMAGE))
+        } else {
+            self.art(MAP_IMAGE)
+        }
+    }
+
+    fn load_expanded(&mut self, cx: &mut Context<Self>) {
+        if !self.config.expanded_compat
+            || self.loading
+            || self.expanded_loading
+            || self.expanded_map.is_some()
+        {
+            return;
+        }
+        let [path, _] = match expanded::packs(&self.workshop) {
+            Ok(paths) => paths,
+            Err(error) => {
+                self.expanded_map = Some(Err(error.to_string()));
+                return;
+            }
+        };
+        self.expanded_loading = true;
+        let work = cx.background_executor().spawn(async move {
+            let pack = Arc::new(game::open_pack(&path)?);
+            anyhow::ensure!(
+                pack.file(MAP_IMAGE, true).is_some(),
+                "190 Expanded’s campaign map image is missing."
+            );
+            Ok::<_, anyhow::Error>((pack.clone(), expanded::catalog(&pack)?))
+        });
+        cx.spawn(async move |entity, cx| {
+            let result = work.await;
+            entity
+                .update(cx, |editor, cx| {
+                    editor.expanded_loading = false;
+                    editor.expanded_map = Some(match result {
+                        Ok((pack, map)) => Ok(ExpandedMap {
+                            map,
+                            art: editor.artwork.register(pack),
+                        }),
+                        Err(error) => Err(format!("{error:#}")),
+                    });
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    fn expanded_base(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.config.expanded_compat = enabled;
+        self.city_filter = "All";
+        if enabled {
+            self.config.trom_compat = false;
+            self.remove_incompatible_equipment();
+            self.load_expanded(cx);
+        } else if self.config.settlement().is_none() {
+            self.config.start_region = HEPU.into();
+        }
+        self.edited(cx);
+    }
+
+    fn starting_sites(&self) -> &[Settlement] {
+        if self.config.expanded_compat {
+            self.expanded_map
+                .as_ref()
+                .and_then(|result| result.as_ref().ok())
+                .map_or(&[], |map| map.map.sites.as_slice())
+        } else {
+            &SETTLEMENTS
+        }
+    }
+
+    fn starting_site(&self) -> Option<&Settlement> {
+        self.starting_sites()
+            .iter()
+            .find(|site| site.key == self.config.start_region)
+    }
+
+    fn expanded_toggle(&self, cx: &mut Context<Self>) -> Div {
+        let status = if self.expanded_loading {
+            "Reading the installed map and settlement ownership…"
+        } else if self.expanded_map.as_ref().is_some_and(Result::is_ok)
+            || expanded::packs(&self.workshop).is_ok()
+        {
+            "Use Extra Regions, including starts in Korea and the northwest."
+        } else {
+            "Requires Extra Regions and Factions & Characters from Workshop."
+        };
+        row_ui()
+            .gap_3()
+            .justify_between()
+            .items_center()
+            .child(
+                col()
+                    .gap_1()
+                    .child(caption("190 Expanded compatibility"))
+                    .child(body(status)),
+            )
+            .child(
+                control("expanded-compat", self.config.expanded_compat)
+                    .flex_shrink_0()
+                    .child(if self.config.expanded_compat {
+                        "190 Expanded · On"
+                    } else {
+                        "190 Expanded · Off"
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.expanded_base(!this.config.expanded_compat, cx)
+                    })),
+            )
     }
 
     fn equipment_catalog(&self) -> Option<&EquipmentCatalog> {
@@ -1149,9 +1282,8 @@ impl Editor {
         let primary = colour(&self.config.primary_colour, 0x783d30);
         let secondary = colour(&self.config.secondary_colour, GOLD);
         let place = self
-            .config
-            .settlement()
-            .map_or("Hepu", |site| site.name.as_str())
+            .starting_site()
+            .map_or("Choose a settlement", |site| site.name.as_str())
             .to_owned();
         let title = if self.config.sect_name.trim().is_empty() {
             "Your faction"
@@ -1178,7 +1310,7 @@ impl Editor {
                         linear_color_stop(rgb(primary), 0.),
                         linear_color_stop(rgb(CARD), 1.),
                     ))
-                    .when_some(self.art(MAP_IMAGE), |element, art| {
+                    .when_some(self.campaign_map_art(), |element, art| {
                         element.child(
                             img(art)
                                 .absolute()
@@ -2212,12 +2344,14 @@ impl Editor {
 
     fn settlement(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let query = self.query(cx);
-        let sites: Vec<_> = SETTLEMENTS
+        let sites: Vec<_> = self
+            .starting_sites()
             .iter()
             .filter(|site| {
                 let owner = match self.city_filter {
-                    "Unoccupied" => !site.han && site.key != HEPU,
+                    "Unoccupied" => site.owner_label() == "Unoccupied",
                     "Han Empire" => site.han,
+                    "Rebel-held" => site.owner_label() == "Rebel-held",
                     _ => true,
                 };
                 owner
@@ -2232,9 +2366,9 @@ impl Editor {
                     )
             })
             .collect();
-        let site = self.config.settlement().unwrap();
+        let site = self.starting_site();
         let viewport = window.viewport_size();
-        let fit_height = (f32::from(viewport.height) - 342.).clamp(290., 600.);
+        let fit_height = (f32::from(viewport.height) - 402.).clamp(290., 600.);
         let available_width =
             (f32::from(viewport.width) - RAIL_WIDTH - PAGE_PAD * 2. - 256.).max(400.);
         let fit = available_width.min(fit_height * 892. / 702.5);
@@ -2246,7 +2380,7 @@ impl Editor {
             .h(px(height))
             .flex_shrink_0()
             .bg(rgb(0x151d16));
-        if let Some(art) = self.art(MAP_IMAGE) {
+        if let Some(art) = self.campaign_map_art() {
             map = map.child(
                 img(art)
                     .absolute()
@@ -2265,6 +2399,16 @@ impl Editor {
         }
         if self.warlords {
             for warlord in WARLORDS.iter() {
+                let position = if self.config.expanded_compat {
+                    self.expanded_map
+                        .as_ref()
+                        .and_then(|map| map.as_ref().ok())
+                        .and_then(|map| map.map.faction_positions.get(&warlord.faction))
+                        .copied()
+                } else {
+                    Some((f32::from(warlord.x) / 892., f32::from(warlord.y) / 702.5))
+                };
+                let Some((x, y)) = position else { continue };
                 let primary = colour(&warlord.primary, LINE);
                 let secondary = colour(&warlord.secondary, GOLD);
                 let path = format!(
@@ -2276,8 +2420,8 @@ impl Editor {
                         .id(SharedString::from(format!("warlord-{}", warlord.name)))
                         .group("warlord")
                         .absolute()
-                        .left(px(f32::from(warlord.x) * width / 892. - 12.))
-                        .top(px((702.5 - f32::from(warlord.y)) * height / 702.5 - 12.))
+                        .left(px(x * width - 12.))
+                        .top(px((1. - y) * height - 12.))
                         .child(
                             div()
                                 .size(px(24.))
@@ -2306,37 +2450,45 @@ impl Editor {
                         ),
                 );
             }
-            map = map.child(
-                div()
-                    .absolute()
-                    .left(px(389. * width / 892. - 4.))
-                    .top(px((702.5 - 193.) * height / 702.5 - 4.))
-                    .child(dot(CINNABAR, 8.)),
-            );
+            if !self.config.expanded_compat {
+                map = map.child(
+                    div()
+                        .absolute()
+                        .left(px(389. * width / 892. - 4.))
+                        .top(px((702.5 - 193.) * height / 702.5 - 4.))
+                        .child(dot(CINNABAR, 8.)),
+                );
+            }
         }
-        map = map.child(self.site_marker(site, width, height, true, cx));
+        if let Some(site) = site {
+            map = map.child(self.site_marker(site, width, height, true, cx));
+        }
         col()
             .gap_4()
             .child(self.header(
                 "Starting settlement",
                 "Choose a city or county on the 190 CE campaign map.",
             ))
+            .child(self.expanded_toggle(cx))
             .child(
                 row_ui()
                     .gap_3()
                     .items_center()
                     .justify_between()
                     .child(
-                        row_ui()
-                            .gap_2()
-                            .children(["All", "Unoccupied", "Han Empire"].map(|filter| {
-                                control(format!("city-{filter}"), filter == self.city_filter)
-                                    .child(filter)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.city_filter = filter;
-                                        cx.notify();
-                                    }))
-                            })),
+                        row_ui().gap_2().children(
+                            ["All", "Unoccupied", "Han Empire"]
+                                .into_iter()
+                                .chain(self.config.expanded_compat.then_some("Rebel-held"))
+                                .map(|filter| {
+                                    control(format!("city-{filter}"), filter == self.city_filter)
+                                        .child(filter)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.city_filter = filter;
+                                            cx.notify();
+                                        }))
+                                }),
+                        ),
                     )
                     .child(
                         row_ui()
@@ -2415,7 +2567,12 @@ impl Editor {
                                     .flex_wrap()
                                     .child(legend(JADE, "Unoccupied"))
                                     .child(legend(GOLD, "Han Empire"))
-                                    .child(legend(CINNABAR, "Guangxin · Han capital"))
+                                    .when(self.config.expanded_compat, |row| {
+                                        row.child(legend(CINNABAR, "Rebel-held"))
+                                    })
+                                    .when(!self.config.expanded_compat, |row| {
+                                        row.child(legend(CINNABAR, "Guangxin · Han capital"))
+                                    })
                                     .child(legend(PAPER, "Selected"))
                                     .child(body("Scroll to zoom · Use scrollbars to pan")),
                             ),
@@ -2431,12 +2588,17 @@ impl Editor {
                                     .p_3()
                                     .gap_1()
                                     .child(caption("Selected settlement"))
-                                    .child(self.heading(site.name.clone(), 31.))
-                                    .child(body(format!(
-                                        "{} · {}",
-                                        site.owner_label(),
-                                        if site.county { "County" } else { "City" }
-                                    ))),
+                                    .child(self.heading(
+                                        site.map_or("Choose a start", |site| &site.name).to_owned(),
+                                        31.,
+                                    ))
+                                    .when_some(site, |panel, site| {
+                                        panel.child(body(format!(
+                                            "{} · {}",
+                                            site.owner_label(),
+                                            if site.county { "County" } else { "City" }
+                                        )))
+                                    }),
                             )
                             .child(caption(format!("{} available", sites.len())))
                             .child(
@@ -2537,7 +2699,7 @@ impl Editor {
     }
 
     fn review(&self, cx: &mut Context<Self>) -> AnyElement {
-        let site = self.config.settlement().unwrap();
+        let site = self.starting_site();
         let class = CLASSES
             .iter()
             .find(|class| class.0 == self.config.subtype)
@@ -2556,7 +2718,7 @@ impl Editor {
                         .child(self.heading("Campaign", 28.))
                         .child(summary_line("Faction", self.config.sect_name.clone()))
                         .child(summary_line("Founder", format!("{} {} · {} · Age {}", self.config.surname, self.config.forename, class.1, self.config.founder_age)))
-                        .child(summary_line("Settlement", format!("{} · {}", site.name, site.owner_label())))
+                        .child(summary_line("Settlement", site.map_or_else(|| "Choose a starting settlement".into(), |site| format!("{} · {}", site.name, site.owner_label()))))
                         .when_some(self.config.warlord(), |panel, entry| panel.child(summary_line("Playstyle", format!("{} · {}", entry.name, entry.focus))))
                         .child(summary_line("Victory", self.config.variant.objective().to_owned()))
                         .child(summary_line("Territory", if self.config.sect_mode { "One commandery" } else { "Unlimited" }.into())))
@@ -2565,8 +2727,14 @@ impl Editor {
                         .child(self.toggle("trom", "TROM compatibility", compatibility, self.config.trom_compat,
                             |this| {
                                 this.config.trom_compat = !this.config.trom_compat;
+                                if this.config.trom_compat {
+                                    this.config.expanded_compat = false;
+                                    this.city_filter = "All";
+                                    if this.config.settlement().is_none() { this.config.start_region = HEPU.into(); }
+                                }
                                 this.remove_incompatible_equipment();
                             }, cx))
+                        .child(self.expanded_toggle(cx))
                         .child(col().gap_2().child(caption("Output folder"))
                             .child(row_ui().gap_2().items_center()
                                 .child(div().flex_1().min_w_0().text_size(px(12.)).text_color(rgb(MUTED)).child(self.output.display().to_string()))
@@ -2577,6 +2745,7 @@ impl Editor {
                             element.child(summary_line("Portrait dependency", filename(path).to_owned()))
                         })
                         .when(self.config.trom_compat, |element| element.child(body("Enable the exported pack above both TROM parts in your mod manager.")))
+                        .when(self.config.expanded_compat, |element| element.child(body("Enable the exported pack above 190 Expanded’s Extra Regions and Factions & Characters.")))
                         .when_some(self.exported.as_ref(), |element, path| {
                             let path = path.clone();
                             element.child(control("reveal-export", true).justify_start().child("Show exported pack ↗")
@@ -2628,6 +2797,20 @@ impl Editor {
                             .map(|error| error.to_string())
                     })
                     .flatten()
+            })
+            .or_else(|| {
+                if !self.config.expanded_compat {
+                    None
+                } else {
+                    match &self.expanded_map {
+                        Some(Err(err)) => Some(err.clone()),
+                        None => Some("Reading the 190 Expanded campaign…".into()),
+                        Some(Ok(_)) if self.starting_site().is_none() => {
+                            Some("Choose an eligible 190 Expanded settlement.".into())
+                        }
+                        _ => None,
+                    }
+                }
             });
         let message = self
             .export_status
@@ -2643,7 +2826,8 @@ impl Editor {
                     format!(
                         "{}  ·  {}",
                         self.config.variant.label(),
-                        self.config.settlement().unwrap().name
+                        self.starting_site()
+                            .map_or("Choose a settlement", |site| &site.name)
                     )
                 }
             });
@@ -2855,6 +3039,9 @@ fn colour(value: &str, fallback: u32) -> u32 {
         .unwrap_or(fallback)
 }
 fn site_colour(site: &Settlement) -> u32 {
+    if site.owner_label() == "Rebel-held" {
+        return CINNABAR;
+    }
     if site.han {
         GOLD
     } else if site.key == HEPU {

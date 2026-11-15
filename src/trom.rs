@@ -163,6 +163,7 @@ fn founder(
     origin: &Node,
     key: &str,
     site: &Settlement,
+    expanded: bool,
 ) -> Result<()> {
     let world = edit.doc;
     let character = donor.record("PERSISTENT_CHARACTER", 10, &format!("{key}_leader"))?;
@@ -229,7 +230,9 @@ fn founder(
             .iter()
             .filter(|field| donor.text(field) == Some(VANILLA_STARTING_INFANTRY))
         {
-            army_changes.insert(field.start, edit.text_reference(TROM_STARTING_INFANTRY));
+            if !expanded {
+                army_changes.insert(field.start, edit.text_reference(TROM_STARTING_INFANTRY));
+            }
         }
     }
     let imported = edit.import(donor, army, &army_changes)?;
@@ -267,11 +270,15 @@ fn founder(
     character_changes.extend(persistent_slots);
     for slot in donor.find(character, "PERSISTENT_RETINUE_SLOT_UNIT_INFO") {
         let unit = &slot.fields()[0];
-        if donor.text(unit) == Some(VANILLA_STARTING_INFANTRY) {
+        if !expanded && donor.text(unit) == Some(VANILLA_STARTING_INFANTRY) {
             character_changes.insert(unit.start, edit.text_reference(TROM_STARTING_INFANTRY));
         }
     }
-    for slot in donor.find(character, "CHARACTER_PERSISTENT_RETINUE_SLOT_RECRUITMENT") {
+    for slot in donor
+        .find(character, "CHARACTER_PERSISTENT_RETINUE_SLOT_RECRUITMENT")
+        .into_iter()
+        .filter(|_| !expanded)
+    {
         let [tree, node, subtree] = slot.fields() else {
             anyhow::bail!("Unexpected founder recruitment slot");
         };
@@ -288,7 +295,7 @@ fn founder(
             character_changes.insert(field.start, edit.text_reference(value));
         }
     }
-    if site.key != HEPU {
+    if expanded || site.key != HEPU {
         let position = donor.one(character, "LOCOMOTABLE")?.fields();
         let mut display = vec![0x0c];
         let (x, y) = map_position(site);
@@ -382,19 +389,70 @@ pub fn merge(
             .fields()[0]
             .start,
     )?)?;
-    let mut frontend_edit = Edit::new(&frontend);
-    let mut edit = Edit::new(&world);
     let site = config.settlement().context("Missing starting settlement")?;
-    roster(&mut frontend_edit, &donor_frontend, key, &site.key, false)?;
-    roster(&mut edit, &donor_frontend, key, &site.key, true)?;
+    transplant(&frontend, &world, &donor_frontend, &donor, key, site)
+}
+
+pub(crate) fn transplant_campaign(
+    base: &[u8],
+    generated: &[u8],
+    key: &str,
+    site: &Settlement,
+) -> Result<Vec<u8>> {
+    let (frontend, world) = campaign_documents(base)?;
+    let (donor_frontend, donor) = campaign_documents(generated)?;
+    transplant(&frontend, &world, &donor_frontend, &donor, key, site)
+}
+
+pub(crate) fn campaign_documents(bytes: &[u8]) -> Result<(Document, Document)> {
+    let frontend = Document::read(bytes)?;
+    let marker = frontend.one(&frontend.root, "COMPRESSED_DATA")?.fields()[0].start;
+    let world = Document::read(&open_world(&frontend.data, marker)?)?;
+    Ok((frontend, world))
+}
+
+fn transplant(
+    frontend: &Document,
+    world: &Document,
+    donor_frontend: &Document,
+    donor: &Document,
+    key: &str,
+    site: &Settlement,
+) -> Result<Vec<u8>> {
+    let mut frontend_edit = Edit::new(frontend);
+    let mut edit = Edit::new(world);
+    roster(&mut frontend_edit, donor_frontend, key, &site.key, false)?;
+    roster(&mut edit, donor_frontend, key, &site.key, true)?;
     let faction = world.record("FACTION", 1, DORMANT)?;
     let origin = donor.record("FACTION", 1, key)?;
+    ensure!(
+        faction
+            .fields()
+            .get(16)
+            .and_then(|field| world.number(field))
+            == Some(0)
+            && faction
+                .fields()
+                .get(17)
+                .and_then(|field| world.number(field))
+                == Some(0)
+            && world.one(faction, "ARMY_ARRAY")?.groups.is_empty(),
+        "The campaign’s dormant Wuwei slot is already in use"
+    );
     for name in ["FACTION_FLAG_AND_COLOURS", "FACTION_TECHNOLOGY_MANAGER"] {
-        let bytes = edit.import(&donor, donor.one(origin, name)?, &HashMap::new())?;
+        let bytes = edit.import(donor, donor.one(origin, name)?, &HashMap::new())?;
         edit.replace(world.one(faction, name)?, bytes);
     }
-    settlement::place(&mut edit, faction, &donor, origin, key, site)?;
-    founder(&mut edit, &donor, faction, origin, key, site)?;
+    settlement::place(&mut edit, faction, donor, origin, key, site)?;
+    founder(
+        &mut edit,
+        donor,
+        faction,
+        origin,
+        key,
+        site,
+        site.owner.is_some(),
+    )?;
     let container = frontend.one(&frontend.root, "COMPRESSED_DATA")?;
     let mut bytes = frontend.data[container.start..container.fields()[0].start - 5].to_vec();
     bytes.extend(compression_record(&frontend.data, &edit.finish()?)?);

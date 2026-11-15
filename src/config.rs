@@ -83,6 +83,8 @@ pub struct Config {
     pub sect_mode: bool,
     #[serde(default)]
     pub trom_compat: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub expanded_compat: bool,
     #[serde(default)]
     pub variant: Variant,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -121,6 +123,7 @@ impl Default for Config {
             start_region: default_region(),
             sect_mode: true,
             trom_compat: false,
+            expanded_compat: false,
             variant: Variant::Sect,
             warlord: None,
         }
@@ -162,7 +165,9 @@ impl Config {
 
     pub fn filename(&self) -> String {
         let key = self.key();
-        if self.trom_compat {
+        if self.expanded_compat {
+            format!("!!!{key}_190_expanded.pack")
+        } else if self.trom_compat {
             format!("!{key}_trom.pack")
         } else {
             format!("{key}.pack")
@@ -232,7 +237,11 @@ impl Config {
         }
         ensure!(ART_SET.is_match(&self.art_set), "Invalid portrait art set.");
         ensure!(
-            self.settlement().is_some(),
+            !self.trom_compat || !self.expanded_compat,
+            "Choose either TROM or 190 Expanded as the campaign base."
+        );
+        ensure!(
+            self.expanded_compat || self.settlement().is_some(),
             "Choose an eligible starting settlement."
         );
         ensure!(
@@ -280,7 +289,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Settlement {
     pub key: String,
     pub name: String,
@@ -289,11 +298,15 @@ pub struct Settlement {
     pub county: bool,
     pub han: bool,
     pub buildings: Option<(String, String, [usize; 2])>,
+    #[serde(default)]
+    pub owner: Option<String>,
 }
 
 impl Settlement {
     pub fn owner_label(&self) -> &'static str {
-        if self.key == HEPU {
+        if self.owner.as_deref() == Some("3k_dlc04_faction_rebels") {
+            "Rebel-held"
+        } else if self.key == HEPU {
             "Hepu scenario"
         } else if self.han {
             "Han Empire"
