@@ -889,7 +889,6 @@ impl Editor {
         } else if self.config.settlement().is_none() {
             self.config.start_region = HEPU.into();
         }
-        self.edited(cx);
     }
 
     fn starting_sites(&self) -> &[Settlement] {
@@ -909,7 +908,7 @@ impl Editor {
             .find(|site| site.key == self.config.start_region)
     }
 
-    fn expanded_toggle(&self, cx: &mut Context<Self>) -> Div {
+    fn expanded_toggle(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let status = if self.expanded_loading {
             "Reading the installed map and settlement ownership…"
         } else if self.expanded_map.as_ref().is_some_and(Result::is_ok)
@@ -919,28 +918,14 @@ impl Editor {
         } else {
             "Requires Extra Regions and Factions & Characters from Workshop."
         };
-        row_ui()
-            .gap_3()
-            .justify_between()
-            .items_center()
-            .child(
-                col()
-                    .gap_1()
-                    .child(caption("190 Expanded compatibility"))
-                    .child(body(status)),
-            )
-            .child(
-                control("expanded-compat", self.config.expanded_compat)
-                    .flex_shrink_0()
-                    .child(if self.config.expanded_compat {
-                        "190 Expanded · On"
-                    } else {
-                        "190 Expanded · Off"
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.expanded_base(!this.config.expanded_compat, cx)
-                    })),
-            )
+        self.toggle(
+            "expanded-compat",
+            "190 Expanded compatibility",
+            status,
+            self.config.expanded_compat,
+            |this, cx| this.expanded_base(!this.config.expanded_compat, cx),
+            cx,
+        )
     }
 
     fn equipment_catalog(&self) -> Option<&EquipmentCatalog> {
@@ -1273,7 +1258,7 @@ impl Editor {
                         })))
                         .when(self.config.variant == Variant::Warlord, |panel| panel.child(self.warlord_picker(cx)))
                         .child(self.toggle("sect-mode", "Sect Mode", if self.config.variant == Variant::Warlord { "Limit territorial control to one commandery." } else { "Hold one commandery and research paid alternatives to imported building materials." }, self.config.sect_mode,
-                            |this| this.config.sect_mode = !this.config.sect_mode, cx))))
+                            |this, _| this.config.sect_mode = !this.config.sect_mode, cx))))
                 .child(self.banner()))
             .into_any_element()
     }
@@ -1400,7 +1385,7 @@ impl Editor {
         label: &'static str,
         description: &'static str,
         enabled: bool,
-        change: impl Fn(&mut Editor) + 'static,
+        change: impl Fn(&mut Editor, &mut Context<Editor>) + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         control(id, false)
@@ -1440,7 +1425,7 @@ impl Editor {
                     ),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
-                change(this);
+                change(this, cx);
                 this.edited(cx);
             }))
     }
@@ -2725,7 +2710,7 @@ impl Editor {
                     .child(panel().gap_3()
                         .child(self.heading("Pack settings", 28.))
                         .child(self.toggle("trom", "TROM compatibility", compatibility, self.config.trom_compat,
-                            |this| {
+                            |this, _| {
                                 this.config.trom_compat = !this.config.trom_compat;
                                 if this.config.trom_compat {
                                     this.config.expanded_compat = false;
