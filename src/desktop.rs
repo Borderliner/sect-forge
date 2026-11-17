@@ -290,7 +290,7 @@ impl Editor {
         let founder_title = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(config.founder_title.clone())
-                .placeholder("Faction name")
+                .placeholder("e.g. Magistrate")
                 .validate(|value, _| value.chars().count() <= MAX_FOUNDER_TITLE)
         });
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search by name"));
@@ -1508,7 +1508,7 @@ impl Editor {
             .child(
                 col()
                     .gap_2()
-                    .child(caption("Campaign title"))
+                    .child(caption("Character title"))
                     .child(Input::new(&self.founder_title).w_full()),
             )
             .child(self.toggle(
