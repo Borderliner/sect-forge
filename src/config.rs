@@ -10,6 +10,7 @@ pub const BASE_KEY: &str = "sects_white_lotus";
 pub const BASE_ART: &str = "3k_main_art_set_generic_male_48_general_wood";
 pub const MIN_FOUNDER_AGE: u8 = 18;
 pub const MAX_FOUNDER_AGE: u8 = 60;
+pub const MAX_FOUNDER_TITLE: usize = 64;
 pub const HEPU: &str = "3k_main_hepu_capital";
 pub const HAN: &str = "3k_main_faction_han_empire";
 pub const CAMPAIGN: &str = "3k_main_campaign_map";
@@ -63,6 +64,10 @@ pub struct Config {
     pub surname: String,
     #[serde(default = "default_founder_age")]
     pub founder_age: u8,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub founder_title: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub legendary_founder: bool,
     pub primary_colour: String,
     pub secondary_colour: String,
     #[serde(default)]
@@ -112,6 +117,8 @@ impl Default for Config {
             forename: "Lian".into(),
             surname: "Shen".into(),
             founder_age: default_founder_age(),
+            founder_title: String::new(),
+            legendary_founder: false,
             primary_colour: "A34434".into(),
             secondary_colour: "D3AD6C".into(),
             faction_key: None,
@@ -211,6 +218,12 @@ impl Config {
                 "{label} must contain 1 to 64 printable characters."
             );
         }
+        self.founder_title = self.founder_title.trim().to_owned();
+        ensure!(
+            self.founder_title.chars().count() <= MAX_FOUNDER_TITLE
+                && !self.founder_title.chars().any(char::is_control),
+            "Founder title must contain at most {MAX_FOUNDER_TITLE} printable characters."
+        );
         for value in [&mut self.primary_colour, &mut self.secondary_colour] {
             *value = value.trim().trim_start_matches('#').to_ascii_uppercase();
             ensure!(

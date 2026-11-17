@@ -569,6 +569,7 @@ fn faction_rows(
                 "character_generation_templates" => {
                     set(row, "art_set_override", art.key.as_str());
                     set(row, "is_male", art.is_male);
+                    set(row, "unique", config.legendary_founder);
                     set(row, "subtype", config.subtype.as_str());
                     let voice = if art.is_male {
                         format!("vo_actor_group_generic_any_male_{element}_general")
@@ -586,6 +587,9 @@ fn faction_rows(
                     if let Some(class) = class.and_then(|class| class.get(field(row, "game_mode")))
                     {
                         row.extend(class.0.clone());
+                    }
+                    if config.legendary_founder {
+                        set_legendary_attributes(game, pack, row, key, element)?;
                     }
                 }
                 "frontend_characters" => {
@@ -675,6 +679,53 @@ fn faction_rows(
     )
 }
 
+fn set_legendary_attributes(
+    game: &Pack,
+    pack: &mut Pack,
+    template: &mut Row,
+    key: &str,
+    element: &str,
+) -> Result<()> {
+    let original = field(template, "attribute_set");
+    let mode = field(template, "game_mode");
+    let set_key = format!("{key}_founder_attributes_{mode}");
+    let primary = match element {
+        "wood" if mode == "historical" => "resolve_records",
+        "wood" => "resolve",
+        "fire" => "instinct",
+        "earth" => "authority",
+        "metal" => "expertise",
+        _ => "cunning",
+    };
+    let mut attributes: Vec<_> = rows(game, "character_attributes")?
+        .into_iter()
+        .filter(|attribute| field(attribute, "set_name") == original)
+        .collect();
+    let main = attributes
+        .iter_mut()
+        .find(|attribute| field(attribute, "attribute_type") == primary)
+        .with_context(|| format!("Missing {primary} in the {original} attribute set"))?;
+    let base = main["base_value"]
+        .as_i64()
+        .context("Invalid base attribute")?;
+    let max = main["max_range"]
+        .as_i64()
+        .context("Invalid attribute cap")?;
+    set(main, "base_value", (base + 80).min(max));
+    for attribute in &mut attributes {
+        set(attribute, "set_name", set_key.as_str());
+    }
+    add_rows(pack, "character_attributes", &set_key, attributes)?;
+    add_rows(
+        pack,
+        "character_attribute_sets",
+        &set_key,
+        vec![row! {"set_name": set_key.as_str()}],
+    )?;
+    set(template, "attribute_set", set_key);
+    Ok(())
+}
+
 fn localization(config: &Config, site: &Settlement, key: &str) -> Localization {
     let name = &config.sect_name;
     let site = &site.name;
@@ -699,7 +750,11 @@ fn localization(config: &Config, site: &Settlement, key: &str) -> Localization {
         ),
         (
             format!("frontend_faction_leaders_localised_subtitle_{key}_ruler"),
-            name.clone(),
+            if config.founder_title.is_empty() {
+                name.clone()
+            } else {
+                config.founder_title.clone()
+            },
         ),
         (
             format!("frontend_faction_leaders_localised_description_{key}_ruler"),
@@ -922,11 +977,23 @@ fn scripts(
     };
     let tiers = doctrines::influence_thresholds(config.variant);
     let influence_cap = doctrines::influence_cap(config.variant).to_string();
+    let start_x = site.x.to_string();
+    let start_y = site.y.to_string();
     for (marker, value) in [
         ("__FACTION_KEY__", key),
         ("__STARTING_TRAITS__", traits.as_str()),
         ("__STARTING_ANCILLARIES__", equipment.as_str()),
         ("__START_REGION__", site.key.as_str()),
+        ("__START_X__", start_x.as_str()),
+        ("__START_Y__", start_y.as_str()),
+        (
+            "__EXPANDED_START__",
+            if config.expanded_compat {
+                "true"
+            } else {
+                "false"
+            },
+        ),
         (
             "__START_PREPLACED__",
             if config.trom_compat || config.expanded_compat {

@@ -9,6 +9,8 @@ local influence_cap = __INFLUENCE_CAP__
 local starting_traits = { __STARTING_TRAITS__ }
 local starting_ancillaries = { __STARTING_ANCILLARIES__ }
 local starting_region = "__START_REGION__"
+local start_x, start_y = __START_X__, __START_Y__
+local expanded_start = __EXPANDED_START__
 local start_preplaced = __START_PREPLACED__
 local starting_owner = "__START_OWNER__"
 local starting_building = "__START_BUILDING__"
@@ -44,6 +46,25 @@ local function prepare_opening_army(owner, reposition)
     local found, x, y = owner:get_valid_spawn_location_in_region(owner:capital_region():name(), false)
     if found then army:teleport_to(x, y) end
     army:replenish_action_points()
+end
+
+local function deploy_expanded_army(owner)
+    if not owner:has_faction_leader() then return end
+    local leader = owner:faction_leader()
+    if leader:has_military_force() or leader:generation_template_key() ~= faction_key .. "_leader" then return end
+    local found, x, y = owner:get_valid_spawn_location_near(start_x, start_y, 12, false)
+    if not found then
+        found, x, y = owner:get_valid_spawn_location_in_region(starting_region, false)
+    end
+    if not found then
+        script_error("Sect Forge could not locate a free army hex near " .. starting_region)
+        return
+    end
+    -- The founder already has a persistent retinue. The engine registers the
+    -- deployed army, its commander, and the unit slots together.
+    cm:create_force_with_existing_general(
+        leader:command_queue_index(), faction_key, "", starting_region, x, y, faction_key .. "_opening_army"
+    )
 end
 
 local function place_starting_city(owner)
@@ -341,7 +362,7 @@ end
 cm:add_first_tick_callback(function()
     local owner = faction()
     if not owner or owner:is_null_interface() or owner:is_dead() then return end
-    if cm:is_new_game() and (start_preplaced or starting_region == hepu) then
+    if cm:is_new_game() and not expanded_start and (start_preplaced or starting_region == hepu) then
         prepare_opening_army(owner, start_preplaced and starting_region ~= hepu)
     end
     reconcile_base()
@@ -360,6 +381,7 @@ cm:add_first_tick_callback_new(function()
     if owner and not owner:is_null_interface() and not owner:is_dead() then
         set_starting_traits(owner)
         equip_starting_ancillaries(owner)
+        if expanded_start then deploy_expanded_army(owner) end
         if not is_warlord then cm:modify_faction(faction_key):set_tech_research_cooldown(0) end
         if not start_preplaced and starting_region ~= hepu then place_starting_city(owner) end
     end

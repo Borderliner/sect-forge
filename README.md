@@ -105,7 +105,7 @@ Install both [190 Expanded’s Extra Regions](https://steamcommunity.com/sharedf
 
 ![The 190 Expanded settlement picker with Pyongyang selected on the Korean Peninsula](docs/media/190-expanded-map.jpg)
 
-Place the generated `!!!sects_<name>_190_expanded.pack` above **Extra Regions** and **Factions & Characters** in your 190 Expanded load order. Start a new 190 CE campaign. 190 Expanded and TROM are distinct campaign bases.
+Place the generated `!!!sects_<name>_190_expanded.pack` above **Extra Regions** and **Factions & Characters** in your 190 Expanded load order. Start a new 190 CE campaign. The game creates the founder's opening army so it can take on more retinues and merge with other armies. Regenerate older packs and start a new campaign to apply this fix. 190 Expanded and TROM are distinct campaign bases.
 
 ## Build from source
 
@@ -138,6 +138,8 @@ Use `--game` to specify the installation and `--output` to choose an export fold
 | `sectMode` | `true` for the one-commandery rules. Defaults to `true`. |
 | `tromCompat` | `true` to build against TROM 5.2. |
 | `founderAge` | Starting age in years, from 18 to 60. Defaults to 18 when omitted. |
+| `founderTitle` | Optional title shown on campaign selection and loading screens, up to 64 characters. Leaving it blank uses the faction name. |
+| `legendaryFounder` | Marks the founder’s character template as unique and grants +80 to the class’s primary attribute at campaign start. Defaults to `false`. |
 | `artSet`, `portraitPack` | Portrait key and optional source pack path. |
 | `subtype`, `startRegion` | Class and supported starting region keys, such as `3k_general_metal` and `3k_main_yizhou_island_capital`. |
 | `startingTraits` | Array of trait keys, such as `3k_main_ceo_trait_personality_brave`. |

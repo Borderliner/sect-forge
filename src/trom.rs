@@ -180,21 +180,12 @@ fn founder(
         .one(&world.root, "CAMPAIGN_COMMAND_QUEUE_INDEX_TABLES")?
         .fields();
     let new_char = reserve(edit, counters, &[0, 21], 1)?;
-    let new_army = reserve(edit, counters, &[FORCE_CQI], 1)?;
-    let new_unit = reserve(edit, counters, &[UNIT_CQI], units.len())?;
-    let new_retinue = reserve(edit, counters, &[DEPLOYED_RETINUE_CQI], 1)?;
     let new_persistent_retinue = reserve(edit, counters, &[PERSISTENT_RETINUE_CQI], 1)?;
-    let new_slot = reserve(edit, counters, &[DEPLOYED_SLOT_CQI], slots.len())?;
     let new_persistent_slot = reserve(edit, counters, &[PERSISTENT_SLOT_CQI], slots.len())?;
     let mut ids = HashMap::from([
         (char_id, new_char),
-        (force_id, new_army),
-        (donor.id(&retinue[0])?, new_retinue),
         (donor.id(&retinue[1])?, new_persistent_retinue),
     ]);
-    for (index, node) in units.iter().enumerate() {
-        ids.insert(donor.id(&node.fields()[0])?, new_unit + index as u32);
-    }
     let deployed_slots: HashMap<_, _> = donor
         .find(force, "MILITARY_FORCE_RETINUE_SLOT")
         .into_iter()
@@ -205,38 +196,61 @@ fn founder(
         "Founder retinue slots differ"
     );
     let mut persistent_slots = HashMap::new();
-    let mut force_slots = HashMap::new();
-    for (index, group) in slots.iter().enumerate() {
-        let fields = group[0].fields();
-        let deployed_id = donor.id(&fields[1])?;
-        let deployed = deployed_slots
-            .get(&deployed_id)
-            .context("Missing deployed founder retinue slot")?
-            .fields();
-        ensure!(
-            donor.id(&fields[0])? == donor.id(&deployed[1])?,
-            "Founder retinue slot references differ"
-        );
-        let persistent_id = integer(new_persistent_slot + u32::try_from(index)?);
-        persistent_slots.insert(fields[0].start, persistent_id.clone());
-        force_slots.insert(deployed[1].start, persistent_id);
-        ids.insert(deployed_id, new_slot + u32::try_from(index)?);
-    }
-    let mut army_changes = remap(donor, army, &ids);
-    army_changes.extend(force_slots);
-    for unit in &units {
-        for field in unit
-            .fields()
-            .iter()
-            .filter(|field| donor.text(field) == Some(VANILLA_STARTING_INFANTRY))
-        {
-            if !expanded {
+    if expanded {
+        // Keep the founder's retinue in reserve. The campaign creates the
+        // deployed force and registers it with its own deployment system.
+        for (index, group) in slots.iter().enumerate() {
+            let fields = group[0].fields();
+            persistent_slots.insert(
+                fields[0].start,
+                integer(new_persistent_slot + u32::try_from(index)?),
+            );
+            persistent_slots.insert(fields[1].start, integer(0));
+        }
+    } else {
+        let new_army = reserve(edit, counters, &[FORCE_CQI], 1)?;
+        let new_unit = reserve(edit, counters, &[UNIT_CQI], units.len())?;
+        let new_retinue = reserve(edit, counters, &[DEPLOYED_RETINUE_CQI], 1)?;
+        let new_slot = reserve(edit, counters, &[DEPLOYED_SLOT_CQI], slots.len())?;
+        ids.insert(force_id, new_army);
+        ids.insert(donor.id(&retinue[0])?, new_retinue);
+        for (index, node) in units.iter().enumerate() {
+            ids.insert(
+                donor.id(&node.fields()[0])?,
+                new_unit + u32::try_from(index)?,
+            );
+        }
+        let mut force_slots = HashMap::new();
+        for (index, group) in slots.iter().enumerate() {
+            let fields = group[0].fields();
+            let deployed_id = donor.id(&fields[1])?;
+            let deployed = deployed_slots
+                .get(&deployed_id)
+                .context("Missing deployed founder retinue slot")?
+                .fields();
+            ensure!(
+                donor.id(&fields[0])? == donor.id(&deployed[1])?,
+                "Founder retinue slot references differ"
+            );
+            let persistent_id = integer(new_persistent_slot + u32::try_from(index)?);
+            persistent_slots.insert(fields[0].start, persistent_id.clone());
+            force_slots.insert(deployed[1].start, persistent_id);
+            ids.insert(deployed_id, new_slot + u32::try_from(index)?);
+        }
+        let mut army_changes = remap(donor, army, &ids);
+        army_changes.extend(force_slots);
+        for unit in &units {
+            for field in unit
+                .fields()
+                .iter()
+                .filter(|field| donor.text(field) == Some(VANILLA_STARTING_INFANTRY))
+            {
                 army_changes.insert(field.start, edit.text_reference(TROM_STARTING_INFANTRY));
             }
         }
+        let imported = edit.import(donor, army, &army_changes)?;
+        edit.replace(world.one(faction, "ARMY_ARRAY")?, imported);
     }
-    let imported = edit.import(donor, army, &army_changes)?;
-    edit.replace(world.one(faction, "ARMY_ARRAY")?, imported);
     let fields = faction.fields();
     let mut shroud = vec![0x12];
     shroud.extend(edit.import(
@@ -295,7 +309,19 @@ fn founder(
             character_changes.insert(field.start, edit.text_reference(value));
         }
     }
-    if expanded || site.key != HEPU {
+    if expanded {
+        let active = donor.one(character, "ACTIVE_CHARACTER")?.fields();
+        ensure!(
+            donor.name(&active[17]) == "LOCOMOTABLE" && donor.name(&active[18]) == "MAP_CHARACTER",
+            "Unexpected deployed founder record"
+        );
+        let persistent = donor.one(character, "PERSISTENT_RETINUE")?.fields();
+        for link in [&active[19], &active[20], &persistent[1]] {
+            character_changes.insert(link.start, integer(0));
+        }
+        character_changes.insert(active[17].start, Vec::new());
+        character_changes.insert(active[18].start, Vec::new());
+    } else if site.key != HEPU {
         let position = donor.one(character, "LOCOMOTABLE")?.fields();
         let mut display = vec![0x0c];
         let (x, y) = map_position(site);

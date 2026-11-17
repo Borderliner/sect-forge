@@ -29,8 +29,8 @@ use rpfm_lib::files::{Container, pack::Pack};
 
 use crate::{
     config::{
-        CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MIN_FOUNDER_AGE, SETTLEMENTS, SLOTS, Settlement,
-        Variant, WARLORDS, WarlordFamily, output_dir,
+        CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MAX_FOUNDER_TITLE, MIN_FOUNDER_AGE, SETTLEMENTS,
+        SLOTS, Settlement, Variant, WARLORDS, WarlordFamily, output_dir,
     },
     expanded, export,
     game::{self, EquipmentCatalog, EquipmentStats, Game, MAP_IMAGE, Trait, TraitCategory},
@@ -210,6 +210,7 @@ struct Editor {
     fields: [Entity<InputState>; 5],
     colour_pickers: [Entity<ColorPickerState>; 2],
     founder_age: Entity<InputState>,
+    founder_title: Entity<InputState>,
     search: Entity<InputState>,
     pack_search: Entity<InputState>,
     subscriptions: Vec<Subscription>,
@@ -286,11 +287,26 @@ impl Editor {
                     text.len() <= 2 && text.bytes().all(|byte| byte.is_ascii_digit())
                 })
         });
+        let founder_title = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(config.founder_title.clone())
+                .placeholder("Faction name")
+                .validate(|value, _| value.chars().count() <= MAX_FOUNDER_TITLE)
+        });
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search by name"));
         let pack_search = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Filter packs by name or Workshop ID")
         });
         let mut subscriptions = Vec::new();
+        subscriptions.push(cx.subscribe(
+            &founder_title,
+            |editor, input, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    editor.config.founder_title = input.read(cx).value().to_string();
+                    editor.edited(cx);
+                }
+            },
+        ));
         for (index, input) in fields.iter().enumerate() {
             subscriptions.push(cx.subscribe_in(
                 input,
@@ -423,6 +439,7 @@ impl Editor {
             fields,
             colour_pickers,
             founder_age,
+            founder_title,
             search,
             pack_search,
             subscriptions,
@@ -674,6 +691,9 @@ impl Editor {
                             }
                             editor.founder_age.update(cx, |input, cx| {
                                 input.set_value(config.founder_age.to_string(), window, cx);
+                            });
+                            editor.founder_title.update(cx, |input, cx| {
+                                input.set_value(config.founder_title.clone(), window, cx);
                             });
                             if let Some(warlord) = config.warlord() {
                                 editor.playstyle_family = warlord.family;
@@ -1485,6 +1505,20 @@ impl Editor {
                     .child(self.name_field(NameField::Family, cx))
                     .child(self.name_field(NameField::Given, cx)),
             )
+            .child(
+                col()
+                    .gap_2()
+                    .child(caption("Campaign title"))
+                    .child(Input::new(&self.founder_title).w_full()),
+            )
+            .child(self.toggle(
+                "legendary-founder",
+                "Legendary founder",
+                "Start with a legendary primary attribute and a unique character template.",
+                self.config.legendary_founder,
+                |editor, _| editor.config.legendary_founder = !editor.config.legendary_founder,
+                cx,
+            ))
             .child(
                 col()
                     .gap_2()
