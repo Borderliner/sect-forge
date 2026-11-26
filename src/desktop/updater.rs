@@ -67,6 +67,32 @@ mod windows {
         .join("System32"))
     }
 
+    fn powershell() -> Result<Command> {
+        let mut command = Command::new(system32()?.join("WindowsPowerShell/v1.0/powershell.exe"));
+        command
+            .creation_flags(NO_WINDOW)
+            .args(["-NoProfile", "-NonInteractive", "-Command"]);
+        Ok(command)
+    }
+
+    fn system_proxy(url: &str) -> Option<String> {
+        if ["HTTPS_PROXY", "ALL_PROXY"]
+            .iter()
+            .any(|name| env::var_os(name).is_some_and(|value| !value.is_empty()))
+        {
+            return None;
+        }
+        let result = powershell()
+            .ok()?
+            .arg("$url = [uri]$env:SECTFORGE_UPDATE_URL; $proxy = [Net.WebRequest]::GetSystemWebProxy(); if (!$proxy.IsBypassed($url)) { $proxy.GetProxy($url).AbsoluteUri }")
+            .env("SECTFORGE_UPDATE_URL", url)
+            .output()
+            .ok()?;
+        let proxy = std::str::from_utf8(&result.stdout).ok()?.trim();
+        (result.status.success() && (proxy.starts_with("http://") || proxy.starts_with("https://")))
+            .then(|| proxy.to_owned())
+    }
+
     fn get(url: &str, maximum: u64, destination: Option<&Path>) -> Result<Vec<u8>> {
         let mut curl = Command::new(system32()?.join("curl.exe"));
         curl.creation_flags(NO_WINDOW).args([
@@ -90,6 +116,9 @@ mod windows {
             "--max-filesize",
             &maximum.to_string(),
         ]);
+        if let Some(proxy) = system_proxy(url) {
+            curl.arg("--proxy").arg(proxy);
+        }
         if let Some(path) = destination {
             curl.arg("--output").arg(path);
         }
@@ -170,14 +199,8 @@ mod windows {
             "The update failed SHA-256 verification."
         );
         drop(file);
-        Command::new(system32()?.join("WindowsPowerShell/v1.0/powershell.exe"))
-            .creation_flags(NO_WINDOW)
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                include_str!("apply_update.ps1"),
-            ])
+        powershell()?
+            .arg(include_str!("apply_update.ps1"))
             .env("SECTFORGE_UPDATE_OLD", &current)
             .env("SECTFORGE_UPDATE_NEW", &download)
             .env("SECTFORGE_UPDATE_PID", std::process::id().to_string())
