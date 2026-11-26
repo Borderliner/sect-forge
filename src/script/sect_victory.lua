@@ -53,6 +53,7 @@ end
 
 local function find_new_patron(owner)
     local deals = owner:diplomatic_deal_list()
+    local current = cm:get_saved_value(patron_value)
     local latest, patron, signed_turn = -1, nil, nil
     for i = 0, deals:num_items() - 1 do
         local deal = deals:item_at(i)
@@ -61,7 +62,7 @@ local function find_new_patron(owner)
         if not cm:get_saved_value(seen) then
             local terms = deal:components()
             local candidate = sponsored_warlord(terms)
-            if candidate and id > latest then
+            if candidate and candidate:name() ~= current and id > latest then
                 latest, patron = id, candidate
                 signed_turn = terms:item_at(0):round_signed()
             end

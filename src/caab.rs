@@ -11,7 +11,6 @@ const ARRAY: u8 = 0x40;
 const EXTENDED: u8 = 0x20;
 const WIDE: u8 = 0x0e;
 const TEXT: u8 = 0x0f;
-const UNSIGNED: [u8; 6] = [8, 0x14, 0x15, 0x16, 0x17, 0x18];
 
 #[derive(Debug)]
 pub struct Node {
@@ -290,15 +289,6 @@ pub fn integer(value: u32) -> Vec<u8> {
         0x10000..=0xffffff => vec![0x18, little[2], little[1], little[0]],
         _ => [vec![8], little.to_vec()].concat(),
     }
-}
-
-pub fn remap(doc: &Document, node: &Node, ids: &HashMap<u32, u32>) -> HashMap<usize, Vec<u8>> {
-    let mut found = Vec::new();
-    node.visit(&|node| UNSIGNED.contains(&node.kind), &mut found);
-    found
-        .into_iter()
-        .filter_map(|node| Some((node.start, integer(*ids.get(&doc.number(node)?)?))))
-        .collect()
 }
 
 pub struct Edit<'a> {

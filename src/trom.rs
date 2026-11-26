@@ -6,7 +6,7 @@ use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    caab::{Document, Edit, Node, integer, remap},
+    caab::{Document, Edit, Node, integer},
     config::{Config, HEPU, Settlement},
     startpos::{Mode, compression_record, map_position, open_world},
 };
@@ -138,7 +138,7 @@ fn equipment(
         }
         edit.append(items, bytes);
     }
-    let mut changes = remap(donor, original, &ids);
+    let mut changes = remap_references(donor, original, &ids, &[("CEOS_BLOCK", &[0])])?;
     changes.insert(manager_field.start, integer(new_manager_id));
     // Equipment slots have their own CQI space. Donor slot IDs already belong
     // to other TROM characters, even when the associated CEO IDs are unique.
@@ -154,6 +154,32 @@ fn equipment(
     bytes.extend(edit.import(donor, original, &changes)?);
     edit.append(world.one(&world.root, managers)?, bytes);
     Ok(())
+}
+
+// Only these record columns contain links. Other integers can have exactly
+// the same value as a donor ID (including a birth year or morale effect).
+fn remap_references(
+    doc: &Document,
+    root: &Node,
+    ids: &HashMap<u32, u32>,
+    columns: &[(&str, &[usize])],
+) -> Result<HashMap<usize, Vec<u8>>> {
+    let mut changes = HashMap::new();
+    for &(record, indices) in columns {
+        for node in doc.find(root, record) {
+            for group in &node.groups {
+                for &index in indices {
+                    let field = group
+                        .get(index)
+                        .with_context(|| format!("Missing {record} field {index}"))?;
+                    if let Some(new) = ids.get(&doc.id(field)?) {
+                        changes.insert(field.start, integer(*new));
+                    }
+                }
+            }
+        }
+    }
+    Ok(changes)
 }
 
 fn founder(
@@ -237,7 +263,19 @@ fn founder(
             force_slots.insert(deployed[1].start, persistent_id);
             ids.insert(deployed_id, new_slot + u32::try_from(index)?);
         }
-        let mut army_changes = remap(donor, army, &ids);
+        let mut army_changes = remap_references(
+            donor,
+            army,
+            &ids,
+            &[
+                ("MILITARY_FORCE", &[0, 1]),
+                ("AGENT_CONTAINER", &[0]),
+                ("MILITARY_FORCE_LEGACY", &[0]),
+                ("MILITARY_FORCE_RETINUE", &[0, 1, 2]),
+                ("MILITARY_FORCE_RETINUE_SLOT", &[0, 2, 3]),
+                ("UNIT", &[0, 9]),
+            ],
+        )?;
         army_changes.extend(force_slots);
         for unit in &units {
             for field in unit
@@ -280,7 +318,21 @@ fn founder(
         .context("Missing faction leader post")?;
     ids.insert(old_post, world.id(&post.fields()[0])?);
     ids.insert(donor.id(&origin.fields()[0])?, world.id(&fields[0])?);
-    let mut character_changes = remap(donor, character, &ids);
+    let mut character_changes = remap_references(
+        donor,
+        character,
+        &ids,
+        &[
+            ("PERSISTENT_CHARACTER", &[0, 2, 17]),
+            ("PERSISTENT_CHARACTER_FACTION_LINK", &[0]),
+            ("EMPLOYMENT_HISTORY_ENTRY", &[0]),
+            ("STATISTICS", &[0]),
+            ("ACTIVE_CHARACTER", &[11, 19, 20]),
+            ("MAP_CHARACTER", &[9, 10]),
+            ("PERSISTENT_RETINUE", &[0, 1, 2]),
+            ("PERSISTENT_RETINUE_SLOT", &[1, 2]),
+        ],
+    )?;
     character_changes.extend(persistent_slots);
     for slot in donor.find(character, "PERSISTENT_RETINUE_SLOT_UNIT_INFO") {
         let unit = &slot.fields()[0];
@@ -353,7 +405,12 @@ fn founder(
     record.extend(edit.import(
         donor,
         member,
-        &remap(donor, member, &HashMap::from([(char_id, new_char)])),
+        &remap_references(
+            donor,
+            member,
+            &HashMap::from([(char_id, new_char)]),
+            &[("FAMILY_MEMBER", &[0, 1])],
+        )?,
     )?);
     edit.replace(last, record);
     equipment(edit, donor, counters, char_id, new_char)

@@ -8,6 +8,8 @@ use anyhow::{Context, Result, ensure};
 use rpfm_lib::files::{Container, pack::Pack};
 use serde_json::Value;
 
+#[cfg(test)]
+mod campaign_tests;
 mod officers;
 
 use crate::{
@@ -127,6 +129,10 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         None
     };
     let trom_pack = trom_packs.as_ref().map(|[part, _]| part);
+    let campaign_packs = expanded_packs
+        .as_ref()
+        .or(trom_packs.as_ref())
+        .map(|[a, b]| [a, b]);
     if let Some(career) = &config.starting_career {
         let careers = match (&expanded_packs, &trom_packs) {
             (Some([regions, characters]), _) => game.expanded_careers(regions, characters)?,
@@ -144,7 +150,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         .transpose()?;
     let mut equipment = BTreeMap::new();
     if !config.starting_ancillaries.is_empty() {
-        let mut available = game.equipment(trom_packs.as_ref().map(|[a, b]| [a, b]))?;
+        let mut available = game.equipment(campaign_packs)?;
         for (slot, key) in &config.starting_ancillaries {
             let item = available.remove(key).with_context(|| {
                 format!("Starting item {key} is missing from this campaign's equipment.")
@@ -269,7 +275,14 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         warlord_sources.write(&mut pack, entry, &key)?;
     } else {
         campaign_actions::write(&game.pack, &mut pack, &mut loc, config.variant, &key)?;
-        doctrines::write(&game.pack, trom_pack, &mut pack, &mut loc, &config, &key)?;
+        doctrines::write(
+            &game.pack,
+            campaign_packs.as_slice().as_flattened(),
+            &mut pack,
+            &mut loc,
+            &config,
+            &key,
+        )?;
         unlocks::write_buildings(&unlocks, &mut pack, &mut loc, &config, &key)?;
         buildings::write(&unlocks, &mut pack, &mut loc, &config, &key)?;
     }
@@ -297,7 +310,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     let staged = stage.path().join(&filename);
     game::save(&mut pack, &staged)?;
     let saved = game::open_pack(&staged)?;
-    verify(&pack, &saved)?;
+    verify(&pack, &saved, &config)?;
     if let Some(playstyle) = &playstyle {
         warlords::Sources::validate_pack(&saved, playstyle, &key)?;
     } else {
@@ -317,7 +330,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     Ok(published)
 }
 
-fn verify(original: &Pack, saved: &Pack) -> Result<()> {
+fn verify(original: &Pack, saved: &Pack, config: &Config) -> Result<()> {
     ensure!(
         original.dependencies() == saved.dependencies(),
         "Saved pack dependencies differ from the export"
@@ -330,11 +343,36 @@ fn verify(original: &Pack, saved: &Pack) -> Result<()> {
     }
     for mode in Mode::ALL {
         let path = format!("campaigns/{CAMPAIGN}/startpos_{}.esf", mode.key());
+        let bytes = raw(saved, &path)?;
         ensure!(
-            raw(saved, &path)? == raw(original, &path)?,
+            bytes == raw(original, &path)?,
             "Saved start position differs for {}",
             mode.key()
         );
+        let (frontend, world) = trom::campaign_documents(&bytes)?;
+        let key = config.key();
+        let founder = world.record("PERSISTENT_CHARACTER", 10, &format!("{key}_leader"))?;
+        let birth = founder
+            .fields()
+            .get(7)
+            .context("Missing founder birth date")?;
+        ensure!(
+            world.name(birth) == "DATE"
+                && birth.fields().first().and_then(|year| world.number(year))
+                    == Some(190 - u32::from(config.founder_age)),
+            "The {} campaign has a different founder age from the project",
+            mode.key()
+        );
+        if config.trom_compat || config.expanded_compat {
+            for doc in [&frontend, &world] {
+                let ownership = doc.group("REGION_OWNERSHIPS", 0, &config.start_region)?;
+                ensure!(
+                    ownership.get(1).and_then(|owner| doc.text(owner)) == Some(key.as_str()),
+                    "The founder does not own the selected {} settlement",
+                    mode.key()
+                );
+            }
+        }
     }
     Ok(())
 }

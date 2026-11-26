@@ -43,12 +43,12 @@
 | **Career** | Search backgrounds available in the selected campaign, such as Zhao Yun’s *Light in the Dark*, and preview their effects. |
 | **Starting officers** | Create up to 12 additional officers. Choose each officer’s name, class, and gender. They join your court on the first turn. |
 | **Traits** | Browse 84 traits with their icons, gameplay effects, and scopes. Switch between List and Grid and filter by element, Good, or Bad. Choose up to three starting traits, including one physical trait. |
-| **Equipment** | Browse all five equipment slots from the installed game and DLCs, with TROM gear available when compatibility is enabled. Compare combat stats and character bonuses, see Romance and Records differences, and check which items your founder can equip. |
+| **Equipment** | Browse all five equipment slots from the installed game and DLCs, including gear from the selected TROM or 190 Expanded campaign. Compare combat stats and character bonuses, see Romance and Records differences, and check which items your founder can equip. |
 | **Settlement** | Browse 88 base-game starts or open the installed 190 Expanded map to choose eligible settlements in Korea and the northwest. |
 
 Workshop packs can be found by filename or ID, or opened directly from disk. Complete image-only portraits can use their original artwork and unit card with a vanilla female 3D model. Exports that use Workshop artwork list the source pack as a dependency.
 
-Sect Forge checks for stable GitHub releases on startup. If an update is available, click **Update to v…** and close the app after the download finishes. The updated version opens the next time you start Sect Forge.
+Sect Forge checks for stable GitHub releases on startup. Click **Check for updates** beside the app version to check again. If an update is available, click **Update to v…** and close the app after the download finishes. The updated version opens the next time you start Sect Forge.
 
 ## Screenshots
 

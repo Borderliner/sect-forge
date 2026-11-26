@@ -149,7 +149,7 @@ pub struct Config {
     pub starting_traits: Vec<String>,
     #[serde(default)]
     pub starting_ancillaries: BTreeMap<String, String>,
-    #[serde(default = "default_region")]
+    #[serde(default = "default_region", alias = "cityRegion")]
     pub start_region: String,
     #[serde(default = "enabled")]
     pub sect_mode: bool,

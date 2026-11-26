@@ -129,8 +129,9 @@ struct Source {
 
 struct ExpandedMap {
     map: expanded::CampaignMap,
-    art: usize,
+    art: [usize; 2],
     careers: Result<Vec<Career>, String>,
+    equipment: Result<EquipmentCatalog, String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -459,7 +460,7 @@ impl Editor {
             attribute_inputs,
             officer_draft,
             #[cfg(windows)]
-            update_status: updater::Status::Checking,
+            update_status: updater::Status::Current,
             search,
             pack_search,
             subscriptions,
@@ -539,7 +540,9 @@ impl Editor {
                             }
                             editor.workshop = workshop;
                             if let Some(Ok(map)) = editor.expanded_map.take() {
-                                editor.artwork.discard(map.art);
+                                for id in map.art {
+                                    editor.artwork.discard(id);
+                                }
                             }
                             editor.load_expanded(cx);
                             if let Some(path) = editor.config.portrait_pack.clone() {
@@ -890,7 +893,7 @@ impl Editor {
                 .as_ref()?
                 .as_ref()
                 .ok()
-                .map(|map| asset(map.art, MAP_IMAGE))
+                .map(|map| asset(map.art[0], MAP_IMAGE))
         } else {
             self.art(MAP_IMAGE)
         }
@@ -922,10 +925,14 @@ impl Editor {
                 "190 Expanded’s campaign map image is missing."
             );
             let map = expanded::catalog(&pack)?;
-            let careers = game::open_pack(&character_path)
-                .and_then(|characters| game.expanded_careers(&pack, &characters))
+            let characters = Arc::new(game::open_pack(&character_path)?);
+            let careers = game
+                .expanded_careers(&pack, &characters)
                 .map_err(|error| format!("{error:#}"));
-            Ok::<_, anyhow::Error>((pack, map, careers))
+            let equipment = game
+                .equipment(Some([&pack, &characters]))
+                .map_err(|error| format!("{error:#}"));
+            Ok::<_, anyhow::Error>(([pack, characters], map, careers, equipment))
         });
         cx.spawn(async move |entity, cx| {
             let result = work.await;
@@ -933,13 +940,17 @@ impl Editor {
                 .update(cx, |editor, cx| {
                     editor.expanded_loading = false;
                     editor.expanded_map = Some(match result {
-                        Ok((pack, map, careers)) => Ok(ExpandedMap {
+                        Ok((packs, map, careers, equipment)) => Ok(ExpandedMap {
                             map,
-                            art: editor.artwork.register(pack),
+                            art: packs.map(|pack| editor.artwork.register(pack)),
                             careers,
+                            equipment,
                         }),
                         Err(error) => Err(format!("{error:#}")),
                     });
+                    if editor.config.expanded_compat {
+                        editor.remove_incompatible_equipment();
+                    }
                     cx.notify();
                 })
                 .ok();
@@ -952,11 +963,11 @@ impl Editor {
         self.city_filter = "All";
         if enabled {
             self.config.trom_compat = false;
-            self.remove_incompatible_equipment();
             self.load_expanded(cx);
         } else if self.config.settlement().is_none() {
             self.config.start_region = HEPU.into();
         }
+        self.remove_incompatible_equipment();
     }
 
     fn starting_sites(&self) -> &[Settlement] {
@@ -996,20 +1007,29 @@ impl Editor {
         )
     }
 
-    fn equipment_catalog(&self) -> Option<&EquipmentCatalog> {
-        let data = self.library.as_ref()?;
-        if self.config.trom_compat {
+    fn equipment_catalog(&self) -> Result<&EquipmentCatalog, &str> {
+        let data = self.library.as_ref().ok_or("Reading game equipment…")?;
+        let catalog = if self.config.expanded_compat {
+            &self
+                .expanded_map
+                .as_ref()
+                .ok_or("Reading 190 Expanded equipment…")?
+                .as_ref()
+                .map_err(String::as_str)?
+                .equipment
+        } else if self.config.trom_compat {
             data.trom_equipment
                 .as_ref()
-                .and_then(|catalog| catalog.as_ref().ok())
+                .ok_or("Install both TROM packs to browse TROM equipment.")?
         } else {
-            data.equipment.as_ref().ok()
-        }
+            &data.equipment
+        };
+        catalog.as_ref().map_err(String::as_str)
     }
 
     fn remove_incompatible_equipment(&mut self) {
         let element = self.config.element();
-        let Some(catalog) = self.equipment_catalog() else {
+        let Ok(catalog) = self.equipment_catalog() else {
             return;
         };
         let remove: Vec<_> = self
@@ -1288,44 +1308,54 @@ impl Editor {
         }
         #[cfg(windows)]
         {
-            match &self.update_status {
+            let status = match &self.update_status {
                 updater::Status::Available(update) => {
                     let update = update.clone();
-                    Some(
-                        control("install-update", false)
-                            .child(format!("Update to v{}", update.version))
-                            .on_click(cx.listener(move |editor, _, _, cx| {
-                                editor.stage_update(update.clone(), cx)
-                            }))
-                            .into_any_element(),
-                    )
+                    control("install-update", false)
+                        .child(format!("Update to v{}", update.version))
+                        .on_click(cx.listener(move |editor, _, _, cx| {
+                            editor.stage_update(update.clone(), cx)
+                        }))
+                        .into_any_element()
                 }
                 updater::Status::Downloading => {
-                    Some(body("Downloading update…").into_any_element())
+                    return Some(body("Downloading update…").into_any_element());
                 }
-                updater::Status::Ready => Some(
-                    notice("Update installs when you close Sect Forge.", JADE).into_any_element(),
-                ),
-                updater::Status::Error(error) => Some(
-                    col()
-                        .gap_1()
-                        .child(body(error.clone()))
-                        .child(
-                            control("retry-update", false)
-                                .child("Retry update check")
-                                .on_click(
-                                    cx.listener(|editor, _, _, cx| editor.check_for_update(cx)),
-                                ),
-                        )
-                        .into_any_element(),
-                ),
-                _ => None,
-            }
+                updater::Status::Ready => {
+                    return Some(
+                        notice("Update installs when you close Sect Forge.", JADE)
+                            .into_any_element(),
+                    );
+                }
+                updater::Status::Checking => body("Checking for updates…").into_any_element(),
+                updater::Status::Current => body("Sect Forge is up to date.").into_any_element(),
+                updater::Status::Error(error) => body(error.clone()).into_any_element(),
+            };
+            Some(
+                col()
+                    .gap_1()
+                    .child(status)
+                    .child(
+                        Button::new("check-for-updates")
+                            .small()
+                            .outline()
+                            .disabled(matches!(self.update_status, updater::Status::Checking))
+                            .label("Check for updates")
+                            .on_click(cx.listener(|editor, _, _, cx| editor.check_for_update(cx))),
+                    )
+                    .into_any_element(),
+            )
         }
     }
 
     #[cfg(windows)]
     fn check_for_update(&mut self, cx: &mut Context<Self>) {
+        if !matches!(
+            self.update_status,
+            updater::Status::Current | updater::Status::Available(_) | updater::Status::Error(_)
+        ) {
+            return;
+        }
         self.update_status = updater::Status::Checking;
         let work = cx.background_executor().spawn(async { updater::check() });
         cx.spawn(async move |entity, cx| {
@@ -2227,13 +2257,16 @@ impl Editor {
         let query = self.query(cx);
         let slot = self.slot;
         let selected = self.config.starting_ancillaries.get(slot);
-        let catalog = if self.config.trom_compat {
-            data.trom_equipment.as_ref().map_or_else(
-                || Err("Install both TROM packs to browse TROM equipment."),
-                |catalog| catalog.as_ref().map_err(String::as_str),
-            )
+        let catalog = self.equipment_catalog();
+        let overlay_art = if self.config.expanded_compat {
+            self.expanded_map
+                .as_ref()
+                .and_then(|result| result.as_ref().ok())
+                .map(|map| map.art)
+        } else if self.config.trom_compat {
+            data.trom_art
         } else {
-            data.equipment.as_ref().map_err(String::as_str)
+            None
         };
         let mut entries = catalog
             .iter()
@@ -2319,7 +2352,7 @@ impl Editor {
                         let unavailable = item.unavailable.or_else(|| {
                             (!item.fits(element)).then_some("Requires a different founder class")
                         });
-                        let icon = match (item.icon_source, data.trom_art) {
+                        let icon = match (item.icon_source, overlay_art) {
                             (1, Some([id, _])) | (2, Some([_, id])) => Some(asset(id, &item.icon)),
                             _ => self.art(&item.icon),
                         };

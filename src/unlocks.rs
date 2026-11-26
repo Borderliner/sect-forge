@@ -12,12 +12,15 @@ use crate::{
 
 pub struct Sources<'a> {
     game: &'a Pack,
-    trom: Option<&'a Pack>,
+    overlays: Vec<&'a Pack>,
 }
 
 impl<'a> Sources<'a> {
-    pub fn new(game: &'a Pack, trom: Option<&'a Pack>) -> Self {
-        Self { game, trom }
+    pub fn new(game: &'a Pack, overlays: impl IntoIterator<Item = &'a Pack>) -> Self {
+        Self {
+            game,
+            overlays: overlays.into_iter().collect(),
+        }
     }
 
     pub(crate) fn effective(&self, table: &str, keys: &[&str]) -> Result<Vec<Row>> {
@@ -43,21 +46,22 @@ impl<'a> Sources<'a> {
             }
             Ok(())
         };
-        for path in paths(self.game) {
-            // A DB file at the same virtual path replaces the retail file in TROM.
-            if self
-                .trom
-                .is_none_or(|trom| trom.file(&path, false).is_none())
-            {
-                insert(self.game, &path)?;
+        for (index, pack) in std::iter::once(self.game)
+            .chain(self.overlays.iter().copied())
+            .enumerate()
+        {
+            let mut files = paths(pack);
+            if index > 0 {
+                files.sort_by_key(|path| !path.ends_with("/data__"));
             }
-        }
-        if let Some(trom) = self.trom {
-            let mut overrides = paths(trom);
-            // Apply replacement base files before TROM's separately named patches.
-            overrides.sort_by_key(|path| !path.ends_with("/data__"));
-            for path in overrides {
-                insert(trom, &path)?;
+            for path in files {
+                // A higher-priority pack can replace an entire file, including removed rows.
+                if self.overlays[index..]
+                    .iter()
+                    .all(|higher| higher.file(&path, false).is_none())
+                {
+                    insert(pack, &path)?;
+                }
             }
         }
         Ok(result.into_values().collect())

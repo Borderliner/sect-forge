@@ -761,13 +761,17 @@ pub fn influence_cap(variant: Variant) -> i32 {
 
 fn write_extended_progression(
     game: &Pack,
-    trom: Option<&Pack>,
+    overlays: &[&Pack],
     pack: &mut Pack,
+    key: &str,
     group: &str,
 ) -> Result<()> {
     const PATH: &str = "script/campaign/_shared/3k_campaign_progression_extended.lua";
-    let source = trom
-        .filter(|source| source.file(PATH, false).is_some())
+    let source = overlays
+        .iter()
+        .rev()
+        .copied()
+        .find(|source| source.file(PATH, false).is_some())
         .unwrap_or(game);
     let script = String::from_utf8(raw(source, PATH)?)?;
     // Match the native fallback arrays to the four ranks in the sect's DB group.
@@ -776,15 +780,24 @@ fn write_extended_progression(
         script.matches(anchor).count() == 1,
         "Unsupported extended progression script"
     );
+    let registration = if script.contains("local point_keys =") {
+        format!("point_keys[\"{key}\"]")
+    } else {
+        anyhow::ensure!(
+            script.contains("local progression_datas ="),
+            "Unsupported faction progression lookup"
+        );
+        format!("progression_datas[\"{group}\"]")
+    };
     let script = script.replace(anchor, &format!(
         "point_groups[\"{group}\"] = {{unpack(point_groups.default, 1, 4)}}\n\
          default_points_distribution[\"{group}\"] = {{unpack(default_points_distribution.default, 1, 4)}}\n\
-         progression_datas[\"{group}\"] = {{points_group_key = \"{group}\", default_distribution_key = \"{group}\", ai_personality_key = \"balanced\", effects_group_key = \"default\"}}\n\n{anchor}"
+         {registration} = {{points_group_key = \"{group}\", default_distribution_key = \"{group}\", ai_personality_key = \"balanced\", effects_group_key = \"default\"}}\n\n{anchor}"
     ));
     add(pack, PATH, script.as_bytes())
 }
 
-fn sect_progression(game: &Pack, trom: Option<&Pack>, pack: &mut Pack, key: &str) -> Result<()> {
+fn sect_progression(game: &Pack, overlays: &[&Pack], pack: &mut Pack, key: &str) -> Result<()> {
     const HAN: &str = "3k_main_progression_level_group_han_empire_chinese";
     let group = format!("{key}_progression");
     let member = format!("{group}_member");
@@ -834,7 +847,7 @@ fn sect_progression(game: &Pack, trom: Option<&Pack>, pack: &mut Pack, key: &str
     ] {
         add_rows(pack, table, &group, records)?;
     }
-    write_extended_progression(game, trom, pack, &group)
+    write_extended_progression(game, overlays, pack, key, &group)
 }
 const TECH_TREE: &str = "ui/tech_trees/tech_tree.twui.xml";
 
@@ -843,7 +856,7 @@ const SECT_BACKDROP: &str = "ui/sect_forge/sect_reform_backdrop.png";
 
 pub fn write(
     game: &Pack,
-    trom: Option<&Pack>,
+    overlays: &[&Pack],
     pack: &mut Pack,
     loc: &mut Localization,
     config: &Config,
@@ -852,7 +865,7 @@ pub fn write(
     let suffix = format!("{key}_doctrines");
     let cult = config.variant == Variant::Cult;
     if !cult {
-        sect_progression(game, trom, pack, key)?;
+        sect_progression(game, overlays, pack, key)?;
         let sets = rows(game, "technology_node_sets")?
             .into_iter()
             .filter(|row| {
@@ -1000,8 +1013,11 @@ pub fn write(
         add_rows(pack, table, &suffix, records)?;
     }
     let path = if cult { BANDIT_TREE } else { TECH_TREE };
-    let source = trom
-        .filter(|pack| cult && pack.file(path, false).is_some())
+    let source = overlays
+        .iter()
+        .rev()
+        .copied()
+        .find(|pack| pack.file(path, false).is_some())
         .unwrap_or(game);
     add(
         pack,

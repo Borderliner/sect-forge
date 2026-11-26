@@ -43,8 +43,8 @@ pub struct EquipmentStats {
 }
 
 impl Game {
-    pub fn equipment(&self, trom: Option<[&Pack; 2]>) -> Result<EquipmentCatalog> {
-        let [part_one, part_two] = trom.map_or([None, None], |[a, b]| [Some(a), Some(b)]);
+    pub fn equipment(&self, campaign_packs: Option<[&Pack; 2]>) -> Result<EquipmentCatalog> {
+        let [part_one, part_two] = campaign_packs.map_or([None, None], |[a, b]| [Some(a), Some(b)]);
         let doc = self.ceo_data(
             part_two
                 .filter(|p| p.file(super::ceo::CEO_DATA, false).is_some())
@@ -70,7 +70,7 @@ impl Game {
                 }
             }
         }
-        let sources = Sources::new(&self.pack, part_one);
+        let sources = Sources::new(&self.pack, [part_one, part_two].into_iter().flatten());
         let effects = ceo_effects(&doc, &labels, |_| true);
         let mut variants = BTreeMap::<String, BTreeMap<String, Row>>::new();
         for row in sources.effective("ceos_to_equipment_variants", &["ceos_key", "game_mode"])? {
