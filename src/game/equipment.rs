@@ -23,6 +23,8 @@ pub struct Equipment {
     pub rarity: String,
     pub stats: EquipmentStats,
     pub character_owned: bool,
+    pub(crate) initial_node: String,
+    pub(crate) world_limit: Option<u32>,
     pub permission: Option<String>,
     classes: String,
     pub unavailable: Option<&'static str>,
@@ -112,6 +114,20 @@ impl Game {
         let nodes = sections(&doc, "CEO_NODE_TABLE_POPULATE")?;
         let thresholds = sections(&doc, "CEO_THRESHOLD_TABLE_POPULATE")?;
         let permissions = equipment_permissions(&doc)?;
+        let managers = doc.one(&doc.root, "CEO_TEMPLATE_MANAGER_TABLE_POPULATE")?;
+        let world = managers
+            .groups
+            .iter()
+            .find(|r| doc.text(&r[0]) == Some("3k_main_ceo_template_manager_world_generic"))
+            .context("Missing world equipment limits")?;
+        let mut world_limits = BTreeMap::new();
+        for limits in doc.find(&world[1], "CEO_LIMITS_BLOCK") {
+            for r in &limits.groups {
+                if let (Some(key), Some(limit)) = (doc.text(&r[0]), doc.number(&r[1])) {
+                    world_limits.insert(key, limit);
+                }
+            }
+        }
         let mut items = BTreeMap::new();
         for (key, data) in sections(&doc, "CEO_TABLE_POPULATE")? {
             let text = |field| data.get(field).and_then(|n| doc.text(n)).unwrap_or("");
@@ -227,6 +243,8 @@ impl Game {
             items.insert(
                 key.to_owned(),
                 Equipment {
+                    initial_node: node.to_owned(),
+                    world_limit: world_limits.get(key).copied(),
                     slot,
                     title,
                     description,

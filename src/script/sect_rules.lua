@@ -139,9 +139,8 @@ local function place_starting_city(owner)
     end, 0.5)
 end
 
-local function equip_starting_ancillaries(owner)
-    if #starting_ancillaries == 0 or not owner:has_faction_leader() then return end
-    local leader = owner:faction_leader()
+local function equip_starting_ancillaries(owner, leader, starting_ancillaries)
+    if #starting_ancillaries == 0 then return end
     local inventory = cm:modify_faction(owner):ceo_management()
     local personal_inventory = cm:modify_character(leader):ceo_management()
     for _, item in ipairs(starting_ancillaries) do
@@ -151,8 +150,20 @@ local function equip_starting_ancillaries(owner)
         local equipped = slot and slot:equipped_ceo()
         if not equipped or equipped:is_null_interface() or equipped:ceo_data_key() ~= key then
             local source = character_owned and personal_inventory or inventory
-            source:add_ceo(key)
-            ancillaries:equip_ceo_on_character(leader, key, category)
+            local function free_copy()
+                if not slot then return end
+                local choices = slot:all_equippable_ceos()
+                for i = 0, choices:num_items() - 1 do
+                    local ceo = choices:item_at(i)
+                    if ceo:ceo_data_key() == key and not ceo:is_equipped_in_slot() then return ceo end
+                end
+            end
+            local copy = free_copy()
+            if not copy then
+                source:add_ceo(key)
+                copy = free_copy()
+            end
+            if copy then personal_inventory:equip_ceo_in_slot(slot, copy) end
             local applied = slot and slot:equipped_ceo()
             if not applied or applied:is_null_interface() or applied:ceo_data_key() ~= key then
                 output("[SectForge] Could not equip starting ancillary " .. key .. " for " .. faction_key)
@@ -161,9 +172,8 @@ local function equip_starting_ancillaries(owner)
     end
 end
 
-local function set_starting_traits(owner)
-    if #starting_traits == 0 or not owner:has_faction_leader() then return end
-    local leader = owner:faction_leader()
+local function set_starting_traits(leader, starting_traits)
+    if #starting_traits == 0 then return end
     local query = leader:ceo_management()
     local modify = cm:modify_character(leader):ceo_management()
     local wanted, present, remove = {}, {}, {}
@@ -194,9 +204,8 @@ local function set_starting_traits(owner)
     output("[SectForge] " .. faction_key .. " starting traits=" .. table.concat(applied, ", "))
 end
 
-local function set_starting_career(owner)
-    if starting_career == "" or not owner:has_faction_leader() then return end
-    local leader = owner:faction_leader()
+local function set_starting_career(leader, starting_career)
+    if starting_career == "" then return end
     local category = "3k_main_ceo_category_career"
     local query = leader:ceo_management()
     local modify = cm:modify_character(leader):ceo_management()
@@ -455,12 +464,25 @@ end)
 cm:add_first_tick_callback_new(function()
     local owner = faction()
     if owner and not owner:is_null_interface() and not owner:is_dead() then
-        set_starting_traits(owner)
-        set_starting_career(owner)
-        equip_starting_ancillaries(owner)
+        if owner:has_faction_leader() then
+            local leader = owner:faction_leader()
+            set_starting_traits(leader, starting_traits)
+            set_starting_career(leader, starting_career)
+            equip_starting_ancillaries(owner, leader, starting_ancillaries)
+        end
         if #starting_officers > 0 then create_starting_officers(owner) end
-        if #starting_relationships > 0 then
+        if #starting_relationships > 0 or #starting_officers > 0 then
             cm:callback(function()
+                for _, officer in ipairs(starting_officers) do
+                    local character = cm:query_model():character_for_template(officer[1])
+                    if character and not character:is_null_interface() then
+                        set_starting_traits(character, officer[3])
+                        set_starting_career(character, officer[4])
+                        equip_starting_ancillaries(owner, character, officer[5])
+                    else
+                        script_error("Sect Forge could not find starting officer " .. officer[1])
+                    end
+                end
                 for _, link in ipairs(starting_relationships) do
                     if not apply_starting_relationship(link) then
                         script_error("Sect Forge could not set " .. link[1] .. " " .. link[2] .. " " .. link[3])

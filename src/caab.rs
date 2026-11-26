@@ -401,6 +401,22 @@ impl<'a> Edit<'a> {
         bytes
     }
 
+    pub(crate) fn array_like(&self, array: &Node, groups: &[Vec<u8>]) -> Result<Vec<u8>> {
+        ensure!(
+            array.kind & (RECORD | ARRAY) == RECORD | ARRAY,
+            "Expected a CAAB record array"
+        );
+        let header_size = if array.kind & EXTENDED != 0 { 4 } else { 2 };
+        encode(
+            self.doc.raw(array)[..header_size].to_vec(),
+            true,
+            groups,
+            1,
+            1,
+            &[],
+        )
+    }
+
     pub fn append(&mut self, array: &Node, bytes: Vec<u8>) {
         self.groups.entry(array.start).or_default().push(bytes);
     }

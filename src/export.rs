@@ -11,12 +11,13 @@ use serde_json::Value;
 #[cfg(test)]
 mod campaign_tests;
 mod officers;
+mod starting_inventory;
 
 use crate::{
     buildings, campaign_actions,
     config::{
-        Attribute, BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, Officer, SLOTS, Settlement,
-        Variant,
+        Attribute, BASE_KEY, CAMPAIGN, CLASSES, CharacterBuild, Config, HAN, HEPU, Officer, SLOTS,
+        Settlement, Variant,
     },
     doctrines, expanded,
     game::{self, Game, Localization, Row, add, add_loc, add_rows, db_path, field, raw, rows, set},
@@ -107,9 +108,11 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     } else {
         None
     };
-    if !config.starting_traits.is_empty() {
+    let characters =
+        std::iter::once(&config.character).chain(config.officers.iter().map(|o| &o.character));
+    if characters.clone().any(|c| !c.starting_traits.is_empty()) {
         let available = game.traits()?;
-        for key in &config.starting_traits {
+        for key in characters.clone().flat_map(|c| &c.starting_traits) {
             ensure!(
                 available.iter().any(|item| item.key == *key),
                 "Unknown starting trait {key}"
@@ -133,81 +136,51 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         .as_ref()
         .or(trom_packs.as_ref())
         .map(|[a, b]| [a, b]);
-    if let Some(career) = &config.starting_career {
+    if characters.clone().any(|c| c.starting_career.is_some()) {
         let careers = match (&expanded_packs, &trom_packs) {
             (Some([regions, characters]), _) => game.expanded_careers(regions, characters)?,
             (_, Some([part1, part2])) => game.careers(&[part1, part2])?,
             _ => game.careers(&[])?,
         };
-        ensure!(
-            careers.iter().any(|item| &item.key == career),
-            "Starting career {career} is unavailable in this campaign."
-        );
+        for career in characters
+            .clone()
+            .filter_map(|c| c.starting_career.as_ref())
+        {
+            ensure!(
+                careers.iter().any(|item| &item.key == career),
+                "Starting career {career} is unavailable in this campaign."
+            );
+        }
     }
     let warlord_sources = warlords::Sources::new(&game.pack, trom_pack);
     let playstyle = warlord
         .map(|entry| warlord_sources.playstyle(entry))
         .transpose()?;
-    let mut equipment = BTreeMap::new();
-    if !config.starting_ancillaries.is_empty() {
-        let mut available = game.equipment(campaign_packs)?;
-        for (slot, key) in &config.starting_ancillaries {
-            let item = available.remove(key).with_context(|| {
-                format!("Starting item {key} is missing from this campaign's equipment.")
-            })?;
-            ensure!(
-                item.slot == slot && item.fits(config.element()),
-                "{} cannot be equipped in the {slot} slot for this founder.",
-                item.title
-            );
-            equipment.insert(key.clone(), item);
+    let equipment = if characters
+        .clone()
+        .any(|c| !c.starting_ancillaries.is_empty())
+    {
+        let available = game.equipment(campaign_packs)?;
+        for character in characters {
+            for (slot, key) in &character.starting_ancillaries {
+                let item = available.get(key).with_context(|| {
+                    format!("Starting item {key} is missing from this campaign.")
+                })?;
+                ensure!(
+                    item.slot == slot && item.fits(character.element()),
+                    "{} cannot be equipped in the {slot} slot for a {}.",
+                    item.title,
+                    character.subtype
+                );
+            }
         }
-    }
-    report("Preparing founder artwork");
-    let portrait_pack = config
-        .portrait_pack
-        .as_ref()
-        .map(|path| {
-            ensure!(
-                path.extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("pack")),
-                "Choose a portrait .pack file"
-            );
-            dependencies.insert(
-                path.file_name()
-                    .context("Invalid portrait pack name")?
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-            game::open_pack(path)
-        })
-        .transpose()?;
-    let portraits = portraits::catalog(&game.pack, portrait_pack.as_ref())?;
-    let portrait = portraits
-        .iter()
-        .find(|item| item.key == config.art_set)
-        .with_context(|| {
-            format!(
-                "Portrait {} is missing from the chosen source",
-                config.art_set
-            )
-        })?;
-    ensure!(
-        portrait.can_export,
-        "This portrait is preview-only. Choose a portrait with compatible campaign artwork."
-    );
-    let art = portraits::export(
-        &game.pack,
-        portrait_pack.as_ref(),
-        &mut pack,
-        &key,
-        portrait,
-        config.element(),
-        config
-            .starting_ancillaries
-            .get("armour")
-            .map(String::as_str),
-    )?;
+        available
+    } else {
+        BTreeMap::new()
+    };
+    report("Preparing character artwork");
+    let mut artwork = character_artwork(game, &config, &mut pack, &mut dependencies)?;
+    let art = artwork.remove(&key).context("Missing founder artwork")?;
 
     let mut donor_config = config.clone();
     if config.expanded_compat {
@@ -248,6 +221,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         }
         let generated = crate::relationships::prepare_startpos(generated, &config.relationships)
             .with_context(|| format!("Set starting social relationships in {}", mode.key()))?;
+        let generated = starting_inventory::prepare(generated, &config, &equipment)?;
         add(&mut pack, &path, &generated)?;
     }
 
@@ -271,7 +245,9 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         playstyle.as_ref(),
     )?;
     let mut loc = localization(&config, site, &key);
-    officers::write(&game.pack, &template, &mut pack, &mut loc, &config, &key)?;
+    officers::write(
+        &game.pack, &template, &mut pack, &mut loc, &config, &key, &artwork,
+    )?;
     variant(&game.pack, &mut pack, &mut loc, &config, &key)?;
     if let Some(entry) = warlord {
         warlord_sources.write(&mut pack, entry, &key)?;
@@ -331,6 +307,91 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             )
         })?;
     Ok(published)
+}
+
+fn character_artwork(
+    game: &Game,
+    config: &Config,
+    pack: &mut Pack,
+    dependencies: &mut BTreeSet<String>,
+) -> Result<BTreeMap<String, FounderArt>> {
+    let faction = config.key();
+    let mut sources = BTreeMap::<_, Vec<_>>::new();
+    sources
+        .entry(config.portrait_pack.as_deref())
+        .or_default()
+        .push((faction.clone(), &config.character, None, 0));
+    for (i, officer) in config.officers.iter().enumerate() {
+        if !officer.art_set.is_empty() {
+            sources
+                .entry(officer.portrait_pack.as_deref())
+                .or_default()
+                .push((
+                    Officer::key(&faction, i),
+                    &officer.character,
+                    Some(officer),
+                    i + 1,
+                ));
+        }
+    }
+    let mut result = BTreeMap::new();
+    for (path, people) in sources {
+        let source = path
+            .map(|p| -> Result<_> {
+                ensure!(
+                    p.extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("pack")),
+                    "Choose a portrait .pack file"
+                );
+                dependencies.insert(
+                    p.file_name()
+                        .context("Invalid portrait pack name")?
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+                game::open_pack(p)
+            })
+            .transpose()?;
+        let catalog = portraits::catalog(&game.pack, source.as_ref())?;
+        for (key, character, officer, ordinal) in people {
+            let portrait = catalog
+                .iter()
+                .find(|p| p.key == character.art_set)
+                .with_context(|| {
+                    format!(
+                        "{}: portrait {} is missing from the chosen source",
+                        key, character.art_set
+                    )
+                })?;
+            ensure!(
+                portrait.can_export,
+                "{key}: this portrait is preview-only. Choose one with compatible campaign artwork."
+            );
+            let art = portraits::export(
+                &game.pack,
+                source.as_ref(),
+                pack,
+                &key,
+                1_900_001_400 + u32::try_from(ordinal)?,
+                portrait,
+                character.element(),
+                character
+                    .starting_ancillaries
+                    .get("armour")
+                    .map(String::as_str),
+            )?;
+            if let Some(o) = officer {
+                ensure!(
+                    o.female != art.is_male,
+                    "The portrait gender differs from officer {} {}.",
+                    o.surname,
+                    o.forename
+                );
+            }
+            result.insert(key, art);
+        }
+    }
+    Ok(result)
 }
 
 fn verify(original: &Pack, saved: &Pack, config: &Config) -> Result<()> {
@@ -655,7 +716,15 @@ fn faction_rows(
                         row.extend(class.0.clone());
                     }
                     if config.legendary_founder || !config.founder_attributes.is_empty() {
-                        set_founder_attributes(game, pack, row, key, config)?;
+                        set_character_attributes(
+                            game,
+                            pack,
+                            row,
+                            &format!("{key}_founder"),
+                            element,
+                            config.legendary_founder,
+                            &config.founder_attributes,
+                        )?;
                     }
                 }
                 "frontend_characters" => {
@@ -745,17 +814,19 @@ fn faction_rows(
     )
 }
 
-fn set_founder_attributes(
+fn set_character_attributes(
     game: &Pack,
     pack: &mut Pack,
     template: &mut Row,
     key: &str,
-    config: &Config,
+    element: &str,
+    legendary: bool,
+    values: &BTreeMap<Attribute, u16>,
 ) -> Result<()> {
     let original = field(template, "attribute_set");
     let mode = field(template, "game_mode");
-    let set_key = format!("{key}_founder_attributes_{mode}");
-    let primary = Attribute::primary(config.element());
+    let set_key = format!("{key}_attributes_{mode}");
+    let primary = Attribute::primary(element);
     let mut attributes: Vec<_> = rows(game, "character_attributes")?
         .into_iter()
         .filter(|attribute| field(attribute, "set_name") == original)
@@ -766,9 +837,9 @@ fn set_founder_attributes(
             .iter_mut()
             .find(|row| field(row, "attribute_type") == key)
             .with_context(|| format!("Missing {key} in the {original} attribute set"))?;
-        if let Some(&value) = config.founder_attributes.get(&attribute) {
+        if let Some(&value) = values.get(&attribute) {
             set(row, "base_value", value);
-        } else if config.legendary_founder && attribute == primary {
+        } else if legendary && attribute == primary {
             let base = row["base_value"]
                 .as_i64()
                 .context("Invalid base attribute")?;
@@ -1012,16 +1083,19 @@ fn scripts(
         &format!("script/campaign/three_kingdoms_early/factions/{key}/{key}_start.lua"),
         b"-- Campaign initialization is registered by the Sect Forge campaign rules.\n",
     )?;
-    let traits = config
-        .starting_traits
-        .iter()
-        .map(|key| format!("\"{key}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let equipment = SLOTS
+    let traits_for = |character: &CharacterBuild| {
+        character
+            .starting_traits
+            .iter()
+            .map(|key| format!("\"{key}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let equipment_for = |character: &CharacterBuild| {
+        SLOTS
         .iter()
         .filter_map(|(slot, _)| {
-            config.starting_ancillaries.get(*slot).map(|key| {
+            character.starting_ancillaries.get(*slot).map(|key| {
                 let item = &selected[key];
                 let permission = item.permission.as_deref().unwrap_or("");
                 format!(
@@ -1031,7 +1105,10 @@ fn scripts(
             })
         })
         .collect::<Vec<_>>()
-        .join(", ");
+        .join(", ")
+    };
+    let traits = traits_for(&config.character);
+    let equipment = equipment_for(&config.character);
     let mut rules = include_str!("script/sect_rules.lua").to_owned();
     let relationships = config
         .relationships
@@ -1062,9 +1139,12 @@ fn scripts(
         .enumerate()
         .map(|(index, officer)| {
             format!(
-                "{{\"{}\", \"{}\"}}",
+                "{{\"{}\", \"{}\", {{{}}}, \"{}\", {{{}}}}}",
                 Officer::key(key, index),
-                officer.subtype
+                officer.subtype,
+                traits_for(&officer.character),
+                officer.starting_career.as_deref().unwrap_or(""),
+                equipment_for(&officer.character)
             )
         })
         .collect::<Vec<_>>()

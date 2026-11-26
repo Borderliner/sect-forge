@@ -492,6 +492,7 @@ pub fn export(
     source: Option<&Pack>,
     output: &mut Pack,
     key: &str,
+    art_id: u32,
     portrait: &Portrait,
     element: &str,
     armour: Option<&str>,
@@ -562,7 +563,7 @@ pub fn export(
                 set(&mut art, "fallback_composite_display", "EMPTY");
             }
             set(&mut art, "card", art_key.as_str());
-            write_art(output, key, &art_key, art_set, art)?;
+            write_art(output, key, &art_key, art_id, art_set, art)?;
             return Ok(FounderArt {
                 key: art_key,
                 is_male,
@@ -583,7 +584,7 @@ pub fn export(
     }) {
         if replacement_uniform.is_some() {
             // This portrait still uses its source's layered images.
-            write_art(output, key, &art_key, art_set, art)?;
+            write_art(output, key, &art_key, art_id, art_set, art)?;
             return Ok(FounderArt {
                 key: art_key,
                 is_male,
@@ -637,7 +638,7 @@ pub fn export(
     }
     set(&mut art, "portrait", format!("{art_key}/"));
     set(&mut art, "card", art_key.as_str());
-    write_art(output, key, &art_key, art_set, art)?;
+    write_art(output, key, &art_key, art_id, art_set, art)?;
     Ok(FounderArt {
         key: art_key,
         is_male,
@@ -747,11 +748,12 @@ fn write_art(
     output: &mut Pack,
     key: &str,
     art_key: &str,
+    art_id: u32,
     mut art_set: Row,
     mut art: Row,
 ) -> Result<()> {
     set(&mut art_set, "art_set_id", art_key);
-    set(&mut art, "id", 1900001400);
+    set(&mut art, "id", art_id);
     set(&mut art, "art_set_id", art_key);
     add_rows(output, ART_SETS, key, vec![art_set])?;
     add_rows(output, ARTS, key, vec![art])
@@ -972,6 +974,7 @@ mod tests {
             Some(&source),
             &mut output,
             "founder",
+            1_900_001_400,
             portrait,
             "water",
             None,

@@ -75,15 +75,62 @@ impl Attribute {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CharacterBuild {
+    #[serde(default)]
+    pub art_set: String,
+    #[serde(default)]
+    pub portrait_pack: Option<PathBuf>,
+    #[serde(default = "default_subtype")]
+    pub subtype: String,
+    #[serde(default)]
+    pub starting_traits: Vec<String>,
+    #[serde(default)]
+    pub starting_ancillaries: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starting_career: Option<String>,
+}
+
+impl Default for CharacterBuild {
+    fn default() -> Self {
+        Self {
+            art_set: String::new(),
+            portrait_pack: None,
+            subtype: default_subtype(),
+            starting_traits: Vec::new(),
+            starting_career: None,
+            starting_ancillaries: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Officer {
     pub forename: String,
     pub surname: String,
-    #[serde(default = "default_subtype")]
-    pub subtype: String,
+    #[serde(flatten)]
+    pub character: CharacterBuild,
+    #[serde(default)]
+    pub legendary: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<Attribute, u16>,
     #[serde(default)]
     pub female: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub age: Option<u8>,
+}
+
+impl std::ops::Deref for Officer {
+    type Target = CharacterBuild;
+    fn deref(&self) -> &Self::Target {
+        &self.character
+    }
+}
+
+impl std::ops::DerefMut for Officer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.character
+    }
 }
 
 impl Officer {
@@ -133,8 +180,8 @@ pub struct Config {
     pub legendary_founder: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub founder_attributes: BTreeMap<Attribute, u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub starting_career: Option<String>,
+    #[serde(flatten)]
+    pub character: CharacterBuild,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub officers: Vec<Officer>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -143,16 +190,6 @@ pub struct Config {
     pub secondary_colour: String,
     #[serde(default)]
     pub faction_key: Option<String>,
-    #[serde(default)]
-    pub art_set: String,
-    #[serde(default)]
-    pub portrait_pack: Option<PathBuf>,
-    #[serde(default = "default_subtype")]
-    pub subtype: String,
-    #[serde(default)]
-    pub starting_traits: Vec<String>,
-    #[serde(default)]
-    pub starting_ancillaries: BTreeMap<String, String>,
     #[serde(default = "default_region", alias = "cityRegion")]
     pub start_region: String,
     #[serde(default = "enabled")]
@@ -181,6 +218,19 @@ fn enabled() -> bool {
     true
 }
 
+impl std::ops::Deref for Config {
+    type Target = CharacterBuild;
+    fn deref(&self) -> &Self::Target {
+        &self.character
+    }
+}
+
+impl std::ops::DerefMut for Config {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.character
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -191,17 +241,15 @@ impl Default for Config {
             founder_title: String::new(),
             legendary_founder: false,
             founder_attributes: BTreeMap::new(),
-            starting_career: None,
+            character: CharacterBuild {
+                art_set: BASE_ART.into(),
+                ..Default::default()
+            },
             officers: Vec::new(),
             relationships: Vec::new(),
             primary_colour: "A34434".into(),
             secondary_colour: "D3AD6C".into(),
             faction_key: None,
-            art_set: BASE_ART.into(),
-            portrait_pack: None,
-            subtype: default_subtype(),
-            starting_traits: Vec::new(),
-            starting_ancillaries: BTreeMap::new(),
             start_region: default_region(),
             sect_mode: true,
             trom_compat: false,
@@ -219,6 +267,73 @@ static ART_SET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\A[A-Za-z0-9_]{1
 static TRAIT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\A3k_main_ceo_trait_(?:personality|physical)_[a-z0-9_]+\z").unwrap()
 });
+
+impl CharacterBuild {
+    pub fn element(&self) -> &str {
+        self.subtype
+            .strip_prefix("3k_general_")
+            .unwrap_or(&self.subtype)
+    }
+
+    fn validate(&mut self) -> Result<()> {
+        ensure!(
+            self.art_set.is_empty() || ART_SET.is_match(&self.art_set),
+            "Invalid portrait art set."
+        );
+        ensure!(
+            self.portrait_pack.is_none() || !self.art_set.is_empty(),
+            "Select a portrait from the chosen pack."
+        );
+        ensure!(
+            self.starting_career
+                .as_deref()
+                .is_none_or(|key| ART_SET.is_match(key)),
+            "Invalid starting career key."
+        );
+        ensure!(
+            self.starting_traits.len() <= 3,
+            "Choose up to three traits."
+        );
+        let mut unique = std::collections::HashSet::new();
+        ensure!(
+            self.starting_traits
+                .iter()
+                .all(|key| TRAIT.is_match(key) && unique.insert(key)),
+            "Choose each eligible trait once."
+        );
+        ensure!(
+            self.starting_traits
+                .iter()
+                .filter(|key| key.contains("_physical_"))
+                .count()
+                <= 1,
+            "Choose at most one physical trait."
+        );
+        if let Some(key) = self.starting_ancillaries.remove("extra") {
+            let item = LEGACY_EQUIPMENT
+                .get(&key)
+                .context("Unknown legacy accessory or follower.")?;
+            ensure!(
+                matches!(item.slot, "accessory" | "follower"),
+                "Invalid legacy extra slot."
+            );
+            self.starting_ancillaries
+                .entry(item.slot.into())
+                .or_insert(key);
+        }
+        for (slot, key) in &self.starting_ancillaries {
+            ensure!(
+                SLOTS.iter().any(|(known, _)| known == slot)
+                    && !key.is_empty()
+                    && key
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
+                "Invalid starting equipment entry for {slot}."
+            );
+        }
+        Ok(())
+    }
+}
 
 impl Config {
     pub fn key(&self) -> String {
@@ -254,12 +369,6 @@ impl Config {
         } else {
             format!("{key}.pack")
         }
-    }
-
-    pub fn element(&self) -> &str {
-        self.subtype
-            .strip_prefix("3k_general_")
-            .unwrap_or(&self.subtype)
     }
 
     pub fn settlement(&self) -> Option<&'static Settlement> {
@@ -306,12 +415,6 @@ impl Config {
             "Base attributes must be between {MIN_ATTRIBUTE} and {MAX_ATTRIBUTE}."
         );
         ensure!(
-            self.starting_career
-                .as_deref()
-                .is_none_or(|key| ART_SET.is_match(key)),
-            "Invalid starting career key."
-        );
-        ensure!(
             self.officers.len() <= MAX_OFFICERS,
             "Choose up to {MAX_OFFICERS} starting officers."
         );
@@ -319,6 +422,17 @@ impl Config {
             ensure!(
                 officer.age.is_none_or(|age| (18..=80).contains(&age)),
                 "Officer ages must be between 18 and 80."
+            );
+            officer
+                .character
+                .validate()
+                .with_context(|| format!("Officer {} {}", officer.surname, officer.forename))?;
+            ensure!(
+                officer
+                    .attributes
+                    .values()
+                    .all(|v| (MIN_ATTRIBUTE..=MAX_ATTRIBUTE).contains(v)),
+                "Officer base attributes must be between {MIN_ATTRIBUTE} and {MAX_ATTRIBUTE}."
             );
             for name in [&mut officer.forename, &mut officer.surname] {
                 *name = name.trim().to_owned();
@@ -386,47 +500,7 @@ impl Config {
             self.expanded_compat || self.settlement().is_some(),
             "Choose an eligible starting settlement."
         );
-        ensure!(
-            self.starting_traits.len() <= 3,
-            "Choose up to three traits."
-        );
-        let mut unique = std::collections::HashSet::new();
-        ensure!(
-            self.starting_traits
-                .iter()
-                .all(|key| TRAIT.is_match(key) && unique.insert(key)),
-            "Choose each eligible trait once."
-        );
-        ensure!(
-            self.starting_traits
-                .iter()
-                .filter(|key| key.contains("_physical_"))
-                .count()
-                <= 1,
-            "Choose at most one physical trait."
-        );
-        if let Some(key) = self.starting_ancillaries.remove("extra") {
-            let item = LEGACY_EQUIPMENT
-                .get(&key)
-                .context("Unknown legacy accessory or follower.")?;
-            ensure!(
-                matches!(item.slot, "accessory" | "follower"),
-                "Invalid legacy extra slot."
-            );
-            self.starting_ancillaries
-                .entry(item.slot.into())
-                .or_insert(key);
-        }
-        for (slot, key) in &self.starting_ancillaries {
-            ensure!(
-                SLOTS.iter().any(|(known, _)| known == slot)
-                    && !key.is_empty()
-                    && key
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
-                "Invalid starting equipment entry for {slot}."
-            );
-        }
+        self.character.validate()?;
         Ok(self)
     }
 }

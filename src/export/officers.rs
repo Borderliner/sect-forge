@@ -14,6 +14,7 @@ pub(super) fn write(
     loc: &mut Localization,
     config: &Config,
     faction: &str,
+    artwork: &std::collections::BTreeMap<String, crate::portraits::FounderArt>,
 ) -> Result<()> {
     if config.officers.is_empty() {
         return Ok(());
@@ -64,7 +65,20 @@ pub(super) fn write(
         set(&mut row, "other_name", serde_json::Value::Null);
         set(&mut row, "weight", 0);
         set(&mut row, "is_male", !officer.female);
-        set(&mut row, "unique", true);
+        set(&mut row, "unique", officer.legendary);
+        if let Some(art) = artwork.get(&key) {
+            set(&mut row, "art_set_override", art.key.as_str());
+        } else if officer.female && field(donor, "key") == male {
+            let fallback = if element == "wood" {
+                "3k_main_art_set_historical_zheng_jiang_general"
+            } else {
+                "3k_main_art_set_historical_lady_sun_general"
+            };
+            // The game has no generic female Wood or Fire minister template.
+            if element == "wood" || element == "fire" {
+                set(&mut row, "art_set_override", fallback);
+            }
+        }
         set(&mut row, "can_be_born", false);
         if let Some(age) = officer.age {
             set(&mut row, "spawn_age_range", key.as_str());
@@ -96,6 +110,17 @@ pub(super) fn write(
             set(&mut row, "character_generation_template", key.as_str());
             set(&mut row, "min_rank", 0);
             set(&mut row, "max_rank", 0);
+            if officer.legendary || !officer.attributes.is_empty() {
+                super::set_character_attributes(
+                    retail,
+                    pack,
+                    &mut row,
+                    &key,
+                    element,
+                    officer.legendary,
+                    &officer.attributes,
+                )?;
+            }
             new_modes.push(row);
         }
     }

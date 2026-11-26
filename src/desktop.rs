@@ -193,6 +193,7 @@ struct Editor {
     workshop: Vec<PathBuf>,
     show_workshop: bool,
     source_loading: bool,
+    source_request: u64,
     source_error: Option<String>,
     loading: bool,
     error: Option<String>,
@@ -224,7 +225,7 @@ struct Editor {
     founder_age: Entity<InputState>,
     founder_title: Entity<InputState>,
     attribute_inputs: [Entity<InputState>; 5],
-    officer_draft: founder_options::OfficerDraft,
+    officer_editor: Option<founder_options::OfficerEditor>,
     relationship_editor: relationship_editor::RelationshipEditor,
     #[cfg(windows)]
     update_status: updater::Status,
@@ -283,7 +284,10 @@ impl Editor {
                 Some(Gender::Male),
                 &defaults.sect_name,
             ),
-            art_set: "3k_main_art_set_historical_zhao_yun_general".into(),
+            character: crate::config::CharacterBuild {
+                art_set: "3k_main_art_set_historical_zhao_yun_general".into(),
+                ..Default::default()
+            },
             ..defaults
         };
         let fields = [
@@ -311,8 +315,8 @@ impl Editor {
                 .validate(|value, _| value.chars().count() <= MAX_FOUNDER_TITLE)
         });
         let mut subscriptions = Vec::new();
-        let attribute_inputs = Self::attribute_inputs(window, cx, &mut subscriptions);
-        let officer_draft = founder_options::OfficerDraft::new(window, cx);
+        let attribute_inputs = Self::attribute_inputs(window, cx, &mut subscriptions, None);
+
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search by name"));
         let pack_search = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Filter packs by name or Workshop ID")
@@ -430,6 +434,7 @@ impl Editor {
             workshop: Vec::new(),
             show_workshop: false,
             source_loading: false,
+            source_request: 0,
             source_error: None,
             loading: false,
             error: None,
@@ -461,7 +466,7 @@ impl Editor {
             founder_age,
             founder_title,
             attribute_inputs,
-            officer_draft,
+            officer_editor: None,
             relationship_editor: Default::default(),
             #[cfg(windows)]
             update_status: updater::Status::Current,
@@ -551,9 +556,7 @@ impl Editor {
                                 }
                             }
                             editor.load_expanded(cx);
-                            if let Some(path) = editor.config.portrait_pack.clone() {
-                                editor.load_source(path, cx);
-                            }
+                            editor.restore_portrait_source(cx);
                         }
                         Err(error) => editor.error = Some(format!("{error:#}")),
                     }
@@ -569,9 +572,11 @@ impl Editor {
         let Some(game) = self.library.as_ref().map(|data| data.game.clone()) else {
             return;
         };
-        if self.source_loading || self.loading {
+        if self.loading {
             return;
         }
+        self.source_request += 1;
+        let request = self.source_request;
         self.source_loading = true;
         self.source_error = None;
         let artwork = self.artwork.clone();
@@ -590,6 +595,12 @@ impl Editor {
             let result = work.await;
             entity
                 .update(cx, |editor, cx| {
+                    if editor.source_request != request {
+                        if let Ok(source) = result {
+                            editor.artwork.discard(source.art_id);
+                        }
+                        return;
+                    }
                     editor.source_loading = false;
                     match result {
                         Ok(source) => {
@@ -650,10 +661,14 @@ impl Editor {
 
     fn open_pack_dialog(&mut self, cx: &mut Context<Self>) {
         let choice = choose_path(cx, "Open a Three Kingdoms portrait pack", false);
+        let request = self.source_request;
         cx.spawn(async move |entity, cx| {
             let result = choice.await;
             entity
                 .update(cx, |editor, cx| {
+                    if editor.source_request != request {
+                        return;
+                    }
                     match result {
                         Ok(Some(path))
                             if path
@@ -719,7 +734,6 @@ impl Editor {
                 .update_in(cx, |editor, window, cx| {
                     match result {
                         Ok(Some(config)) => {
-                            let source = config.portrait_pack.clone();
                             for (input, value) in editor.fields.iter().zip([
                                 &config.sect_name,
                                 &config.surname,
@@ -746,7 +760,8 @@ impl Editor {
                                     .map_or_else(String::new, u16::to_string);
                                 input.update(cx, |input, cx| input.set_value(value, window, cx));
                             }
-                            editor.officer_draft.reset(window, cx);
+                            editor.officer_editor = None;
+                            editor.founder_tab = FounderTab::Identity;
                             editor.relationship_editor.clear_selection();
                             if let Some(warlord) = config.warlord() {
                                 editor.playstyle_family = warlord.family;
@@ -755,9 +770,7 @@ impl Editor {
                             editor.load_relationships(cx);
                             editor.load_expanded(cx);
                             editor.select_source(None);
-                            if let Some(path) = source {
-                                editor.load_source(path, cx);
-                            }
+                            editor.restore_portrait_source(cx);
                             editor.exported = None;
                             editor.export_status = None;
                         }
@@ -861,6 +874,44 @@ impl Editor {
         })
         .detach();
         cx.notify();
+    }
+
+    fn character(&self) -> &crate::config::CharacterBuild {
+        match &self.officer_editor {
+            Some(e) => &self.config.officers[e.index].character,
+            None => &self.config.character,
+        }
+    }
+
+    fn character_mut(&mut self) -> &mut crate::config::CharacterBuild {
+        match &self.officer_editor {
+            Some(e) => &mut self.config.officers[e.index].character,
+            None => &mut self.config.character,
+        }
+    }
+
+    fn restore_portrait_source(&mut self, cx: &mut Context<Self>) {
+        self.source_request += 1;
+        self.source_loading = false;
+        self.source_error = None;
+        self.show_workshop = false;
+        let path = self.character().portrait_pack.clone();
+        let loaded = self
+            .source
+            .as_ref()
+            .filter(|s| Some(&s.path) == path.as_ref())
+            .or_else(|| {
+                self.selected_source
+                    .as_ref()
+                    .filter(|s| Some(&s.path) == path.as_ref())
+            })
+            .cloned();
+        self.browse_source(loaded);
+        if self.source.is_none()
+            && let Some(path) = path
+        {
+            self.load_source(path, cx);
+        }
     }
 
     fn source_portraits(&self) -> &[Portrait] {
@@ -1040,19 +1091,28 @@ impl Editor {
     }
 
     fn remove_incompatible_equipment(&mut self) {
-        let element = self.config.element();
         let Ok(catalog) = self.equipment_catalog() else {
             return;
         };
-        let remove: Vec<_> = self
-            .config
-            .starting_ancillaries
-            .iter()
-            .filter(|(_, key)| !catalog.get(*key).is_some_and(|item| item.fits(element)))
-            .map(|(slot, _)| slot.clone())
-            .collect();
-        for slot in remove {
-            self.config.starting_ancillaries.remove(&slot);
+        let invalid = std::iter::once(&self.config.character)
+            .chain(self.config.officers.iter().map(|o| &o.character))
+            .enumerate()
+            .flat_map(|(i, c)| {
+                c.starting_ancillaries
+                    .iter()
+                    .filter_map(move |(slot, key)| {
+                        (!catalog.get(key).is_some_and(|item| item.fits(c.element())))
+                            .then(|| (i, slot.clone()))
+                    })
+            })
+            .collect::<Vec<_>>();
+        for (i, slot) in invalid {
+            let character = if i == 0 {
+                &mut self.config.character
+            } else {
+                &mut self.config.officers[i - 1].character
+            };
+            character.starting_ancillaries.remove(&slot);
         }
     }
 
@@ -1102,6 +1162,23 @@ impl Editor {
         cx: &mut Context<Self>,
     ) {
         let pack = source.as_ref().map(|source| source.path.clone());
+        if let Some(e) = &self.officer_editor {
+            let o = &mut self.config.officers[e.index];
+            if o.art_set != key || o.portrait_pack != pack {
+                o.art_set = key.into();
+                o.portrait_pack = pack;
+                if let Some(gender) = gender {
+                    let female = gender == Gender::Female;
+                    if o.female != female {
+                        o.female = female;
+                        let name = name_generator::given_name(gender, &o.forename);
+                        e.names[1].update(cx, |input, cx| input.set_value(name, window, cx));
+                    }
+                }
+                self.edited(cx);
+            }
+            return;
+        }
         if self.config.art_set == key && self.config.portrait_pack == pack {
             cx.notify();
             return;
@@ -1631,6 +1708,14 @@ impl Editor {
             }))
     }
 
+    fn return_to_officers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.officer_editor = None;
+        self.founder_tab = FounderTab::Officers;
+        self.restore_portrait_source(cx);
+        self.clear_search(window, cx);
+        cx.notify();
+    }
+
     fn founder(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let tabs = [
             (FounderTab::Identity, "Personal details"),
@@ -1641,47 +1726,75 @@ impl Editor {
             (FounderTab::Officers, "Starting officers"),
             (FounderTab::Relationships, "Relationships"),
         ];
-        col()
-            .gap_5()
-            .child(self.header(
+        let officer = self.officer_editor.as_ref();
+        let mut view = col().gap_5();
+        if let Some(e) = officer {
+            let o = &self.config.officers[e.index];
+            view = view.child(
+                row_ui()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        control("back-to-officers", false)
+                            .child("← Starting officers")
+                            .on_click(cx.listener(|s, _, window, cx| {
+                                s.return_to_officers(window, cx);
+                            })),
+                    )
+                    .child(self.heading(format!("{} {}", o.surname, o.forename), 28.)),
+            );
+        } else {
+            view = view.child(self.header(
                 "Founding leader",
                 "Set your founder’s age, class, appearance, traits and starting equipment.",
-            ))
-            .child(
-                row_ui()
-                    .gap_2()
-                    .flex_wrap()
-                    .pt_1()
-                    .pb_3()
-                    .border_b_1()
-                    .border_color(rgb(LINE))
-                    .children(tabs.map(|(tab, title)| {
-                        let text = if tab == FounderTab::Traits {
-                            format!("Traits · {}", self.config.starting_traits.len())
-                        } else {
-                            title.into()
-                        };
-                        control(title, self.founder_tab == tab)
-                            .child(text)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.founder_tab = tab;
-                                this.load_relationships(cx);
-                                this.clear_search(window, cx);
-                                this.motion += 1;
-                                cx.notify();
-                            }))
-                    })),
-            )
-            .child(match self.founder_tab {
-                FounderTab::Identity => self.founder_identity(cx).into_any_element(),
-                FounderTab::Portrait => self.portraits(cx),
-                FounderTab::Traits => self.traits(window, cx),
-                FounderTab::Loadout => self.equipment(cx),
-                FounderTab::Career => self.career_picker(window, cx),
-                FounderTab::Officers => self.officers(cx),
-                FounderTab::Relationships => self.relationships(cx),
-            })
-            .into_any_element()
+            ));
+        }
+        view.child(
+            row_ui()
+                .gap_2()
+                .flex_wrap()
+                .pt_1()
+                .pb_3()
+                .border_b_1()
+                .border_color(rgb(LINE))
+                .children(
+                    tabs.into_iter()
+                        .filter(|(tab, _)| {
+                            officer.is_none()
+                                || !matches!(tab, FounderTab::Officers | FounderTab::Relationships)
+                        })
+                        .map(|(tab, title)| {
+                            let text = if tab == FounderTab::Traits {
+                                format!("Traits · {}", self.character().starting_traits.len())
+                            } else {
+                                title.into()
+                            };
+                            control(title, self.founder_tab == tab)
+                                .child(text)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.founder_tab = tab;
+                                    this.load_relationships(cx);
+                                    this.clear_search(window, cx);
+                                    this.motion += 1;
+                                    cx.notify();
+                                }))
+                        }),
+                ),
+        )
+        .child(match self.founder_tab {
+            FounderTab::Identity => match officer {
+                Some(e) => self.officer_details(e, cx),
+                None => self.founder_identity(cx),
+            }
+            .into_any_element(),
+            FounderTab::Portrait => self.portraits(cx),
+            FounderTab::Traits => self.traits(window, cx),
+            FounderTab::Loadout => self.equipment(cx),
+            FounderTab::Career => self.career_picker(window, cx),
+            FounderTab::Officers => self.officers(cx),
+            FounderTab::Relationships => self.relationships(cx),
+        })
+        .into_any_element()
     }
 
     fn founder_identity(&self, cx: &mut Context<Self>) -> Div {
@@ -1708,7 +1821,7 @@ impl Editor {
                 |editor, _| editor.config.legendary_founder = !editor.config.legendary_founder,
                 cx,
             ))
-            .child(self.founder_attributes())
+            .child(self.attribute_fields(&self.attribute_inputs))
             .child(
                 col()
                     .gap_2()
@@ -1742,25 +1855,27 @@ impl Editor {
                             .child(self.age_step_button(1, cx)),
                     ),
             )
-            .child(
-                col().gap_2().child(caption("Character class")).child(
-                    row_ui()
+            .child(self.class_picker(cx))
+    }
+
+    fn class_picker(&self, cx: &mut Context<Self>) -> Div {
+        col().gap_2().child(caption("Character class")).child(
+            row_ui()
+                .gap_2()
+                .flex_wrap()
+                .children(CLASSES.map(|(class, name, _, tone)| {
+                    control(class, self.character().subtype == class)
                         .gap_2()
-                        .flex_wrap()
-                        .children(CLASSES.map(|(class, name, _, tone)| {
-                            control(class, self.config.subtype == class)
-                                .gap_2()
-                                .child(dot(tone, 8.))
-                                .child(name)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.config.subtype = class.into();
-                                    this.remove_incompatible_equipment();
-                                    this.results_page = 0;
-                                    this.edited(cx);
-                                }))
-                        })),
-                ),
-            )
+                        .child(dot(tone, 8.))
+                        .child(name)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.character_mut().subtype = class.into();
+                            this.remove_incompatible_equipment();
+                            this.results_page = 0;
+                            this.edited(cx);
+                        }))
+                })),
+        )
     }
 
     fn age_step_button(&self, step: i8, cx: &mut Context<Self>) -> Button {
@@ -1913,6 +2028,8 @@ impl Editor {
                                 control("vanilla", self.source.is_none())
                                     .child("Vanilla")
                                     .on_click(cx.listener(|this, _, window, cx| {
+                                        this.source_request += 1;
+                                        this.source_loading = false;
                                         this.browse_source(None);
                                         this.show_workshop = false;
                                         this.source_error = None;
@@ -1962,6 +2079,24 @@ impl Editor {
                         }))
                     })),
             )
+            .when(self.officer_editor.is_some(), |view| {
+                view.child(
+                    row_ui().child(
+                        control(
+                            "officer-default-portrait",
+                            self.character().art_set.is_empty(),
+                        )
+                        .child("Campaign default")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let character = this.character_mut();
+                            character.art_set.clear();
+                            character.portrait_pack = None;
+                            this.restore_portrait_source(cx);
+                            this.edited(cx);
+                        })),
+                    ),
+                )
+            })
             .child(self.pagination(Catalog::Portraits, page, false, cx))
             .child(
                 row_ui()
@@ -1999,7 +2134,7 @@ impl Editor {
                                         .child(self.heading(item.label.clone(), 25.))
                                         .child(body(item.gender))
                                         .child(body(if item.can_export {
-                                            "Available for your founder."
+                                            "Available for this character."
                                         } else {
                                             "This artwork has no compatible campaign portrait set."
                                         })),
@@ -2011,8 +2146,9 @@ impl Editor {
     }
 
     fn is_current_portrait(&self, item: &Portrait) -> bool {
-        item.key == self.config.art_set
-            && self.source.as_ref().map(|source| &source.path) == self.config.portrait_pack.as_ref()
+        item.key == self.character().art_set
+            && self.source.as_ref().map(|source| &source.path)
+                == self.character().portrait_pack.as_ref()
     }
 
     fn workshop(&self, cx: &mut Context<Self>) -> Div {
@@ -2106,7 +2242,7 @@ impl Editor {
             2
         };
         let picks = self
-            .config
+            .character()
             .starting_traits
             .iter()
             .filter_map(|key| data.traits.iter().find(|item| item.key == *key))
@@ -2122,7 +2258,9 @@ impl Editor {
                     .child(item.title.clone())
                     .child("×")
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.config.starting_traits.retain(|item| item != &key);
+                        this.character_mut()
+                            .starting_traits
+                            .retain(|item| item != &key);
                         this.edited(cx);
                     }))
             });
@@ -2130,7 +2268,7 @@ impl Editor {
             .child(panel().p_4().gap_2()
                 .child(row_ui().justify_between().items_center().gap_3()
                     .child(self.heading("Starting traits", 27.))
-                    .child(caption(format!("{} / 3 selected", self.config.starting_traits.len()))))
+                    .child(caption(format!("{} / 3 selected", self.character().starting_traits.len()))))
                 .child(body("Choose up to three traits, including one physical trait. Leave empty to keep the campaign defaults."))
                 .child(row_ui().gap_2().flex_wrap().children(picks)))
             .child(self.catalog_search(Catalog::Traits, cx))
@@ -2158,11 +2296,11 @@ impl Editor {
     }
 
     fn trait_card(&self, item: &Trait, cx: &mut Context<Self>) -> Stateful<Div> {
-        let selected = self.config.starting_traits.contains(&item.key);
-        let can_add = self.config.starting_traits.len() < 3
+        let selected = self.character().starting_traits.contains(&item.key);
+        let can_add = self.character().starting_traits.len() < 3
             && (!item.physical
                 || !self
-                    .config
+                    .character()
                     .starting_traits
                     .iter()
                     .any(|key| key.contains("_physical_")));
@@ -2255,9 +2393,11 @@ impl Editor {
             })
             .on_click(cx.listener(move |this, _, _, cx| {
                 if selected {
-                    this.config.starting_traits.retain(|item| item != &key);
+                    this.character_mut()
+                        .starting_traits
+                        .retain(|item| item != &key);
                 } else if can_add {
-                    this.config.starting_traits.push(key.clone());
+                    this.character_mut().starting_traits.push(key.clone());
                 } else {
                     return;
                 }
@@ -2271,7 +2411,7 @@ impl Editor {
         };
         let query = self.query(cx);
         let slot = self.slot;
-        let selected = self.config.starting_ancillaries.get(slot);
+        let selected = self.character().starting_ancillaries.get(slot);
         let catalog = self.equipment_catalog();
         let overlay_art = if self.config.expanded_compat {
             self.expanded_map
@@ -2294,7 +2434,7 @@ impl Editor {
                     && matches_text(&query, &[&item.title, key, &item.rarity, &item.description])
             })
             .collect::<Vec<_>>();
-        let element = self.config.element();
+        let element = self.character().element();
         entries.sort_by_cached_key(|(_, item)| (!item.fits(element), item.title.to_lowercase()));
         let page = self.catalog_page(Catalog::Equipment, entries.len());
         col()
@@ -2308,7 +2448,7 @@ impl Editor {
                             .gap_2()
                             .child(name)
                             .when(
-                                self.config.starting_ancillaries.contains_key(id),
+                                self.character().starting_ancillaries.contains_key(id),
                                 |element| element.child(dot(JADE, 6.)),
                             )
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2326,7 +2466,7 @@ impl Editor {
                         control("gear-default", selected.is_none())
                             .child("Campaign default")
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                this.config.starting_ancillaries.remove(slot);
+                                this.character_mut().starting_ancillaries.remove(slot);
                                 this.edited(cx);
                             })),
                     ),
@@ -2365,7 +2505,7 @@ impl Editor {
                         let current = selected == Some(*key);
                         let key = (*key).clone();
                         let unavailable = item.unavailable.or_else(|| {
-                            (!item.fits(element)).then_some("Requires a different founder class")
+                            (!item.fits(element)).then_some("Requires a different character class")
                         });
                         let icon = match (item.icon_source, overlay_art) {
                             (1, Some([id, _])) | (2, Some([_, id])) => Some(asset(id, &item.icon)),
@@ -2423,7 +2563,7 @@ impl Editor {
                                 )
                                 .on_click(cx.listener(
                                     move |this, _, _, cx| {
-                                        this.config
+                                        this.character_mut()
                                             .starting_ancillaries
                                             .insert(slot.into(), key.clone());
                                         this.edited(cx);
@@ -2934,6 +3074,18 @@ impl Editor {
 
     fn review(&self, cx: &mut Context<Self>) -> AnyElement {
         let site = self.starting_site();
+        let portrait_packs: std::collections::BTreeSet<_> = self
+            .config
+            .portrait_pack
+            .iter()
+            .chain(
+                self.config
+                    .officers
+                    .iter()
+                    .filter_map(|o| o.portrait_pack.as_ref()),
+            )
+            .map(|path| filename(path))
+            .collect();
         let class = CLASSES
             .iter()
             .find(|class| class.0 == self.config.subtype)
@@ -2976,9 +3128,7 @@ impl Editor {
                                 .child(control("output-folder", false).flex_shrink_0().child("Change…")
                                     .on_click(cx.listener(|this, _, _, cx| this.pick_folder(true, cx))))))
                         .child(summary_line("Filename", self.config.filename()))
-                        .when_some(self.config.portrait_pack.as_ref(), |element, path| {
-                            element.child(summary_line("Portrait dependency", filename(path).to_owned()))
-                        })
+                        .children(portrait_packs.into_iter().map(|name| summary_line("Portrait dependency", name.to_owned())))
                         .when(self.config.trom_compat, |element| element.child(body("Enable the exported pack above both TROM parts in your mod manager.")))
                         .when(self.config.expanded_compat, |element| element.child(body("Enable the exported pack above 190 Expanded’s Extra Regions and Factions & Characters.")))
                         .when_some(self.exported.as_ref(), |element, path| {
@@ -3115,6 +3265,7 @@ impl Editor {
                 }))
                 .child(match self.page {
                     Page::Identity => "Edit founder →",
+                    Page::Founder if self.officer_editor.is_some() => "Done editing officer",
                     Page::Founder => "Choose settlement →",
                     Page::Settlement => "Review pack →",
                     Page::Review if self.exporting => "Building pack…",
@@ -3123,6 +3274,9 @@ impl Editor {
                 .on_click(cx.listener(
                     move |this, _, window, cx| match this.page {
                         Page::Identity => this.change_page(Page::Founder, window, cx),
+                        Page::Founder if this.officer_editor.is_some() => {
+                            this.return_to_officers(window, cx)
+                        }
                         Page::Founder => this.change_page(Page::Settlement, window, cx),
                         Page::Settlement => this.change_page(Page::Review, window, cx),
                         Page::Review if can_export => this.export(cx),

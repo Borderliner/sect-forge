@@ -46,7 +46,19 @@ fn export_against_installed_campaigns() -> Result<()> {
                 surname: "He".into(),
                 forename: "Qing".into(),
                 age: Some(19),
-                subtype: "3k_general_water".into(),
+                character: crate::config::CharacterBuild {
+                    subtype: "3k_general_water".into(),
+                    art_set: "3k_main_art_set_historical_zheng_jiang_general".into(),
+                    starting_career: Some("3k_main_ceo_career_historical_cao_pi".into()),
+                    starting_traits: vec!["3k_main_ceo_trait_personality_ambitious".into()],
+                    starting_ancillaries: BTreeMap::from([(
+                        "follower".into(),
+                        "3k_main_ancillary_follower_elite_trainer".into(),
+                    )]),
+                    ..Default::default()
+                },
+                legendary: true,
+                attributes: BTreeMap::from([(Attribute::Cunning, 107)]),
                 female: true,
             }],
             relationships: vec![
@@ -81,6 +93,11 @@ fn export_against_installed_campaigns() -> Result<()> {
                 .starting_ancillaries
                 .insert("weapon".into(), SPEAR.into());
         }
+        const RED_HARE: &str = "3k_main_ancillary_mount_red_hare";
+        config.character.art_set = "3k_main_art_set_historical_zhao_yun_general".into();
+        config.officers[0]
+            .starting_ancillaries
+            .insert("mount".into(), RED_HARE.into());
         let key = config.key();
         let region = config.start_region.clone();
         let pack = game::open_pack(&build(&game, config, out.path(), |_| {})?)?;
@@ -108,6 +125,60 @@ fn export_against_installed_campaigns() -> Result<()> {
             assert_eq!(
                 field(&effects[0], "effect"),
                 format!("relationship_effect_permanent_{sign}_max")
+            );
+        }
+        let officer_key = Officer::key(&key, 0);
+        let officer_rows = game::rows_at(
+            &pack,
+            &db_path("character_generation_templates", &format!("{key}_officers")),
+        )?;
+        let officer = &officer_rows[0];
+        assert_eq!(field(officer, "key"), officer_key);
+        assert_eq!(officer["unique"], true);
+        assert_eq!(officer["is_male"], false);
+        assert_eq!(
+            field(officer, "art_set_override"),
+            format!("{officer_key}_portrait")
+        );
+        let art_rows = |name: &str| game::rows_at(&pack, &db_path("campaign_character_arts", name));
+        assert_ne!(art_rows(&key)?[0]["id"], art_rows(&officer_key)?[0]["id"]);
+        let loadout = rules
+            .lines()
+            .find(|line| line.contains(&format!(r#""{officer_key}", "3k_general_water""#)))
+            .context("Officer loadout")?;
+        for key in [
+            "3k_main_ceo_trait_personality_ambitious",
+            "3k_main_ceo_career_historical_cao_pi",
+            "3k_main_ancillary_follower_elite_trainer",
+            RED_HARE,
+        ] {
+            assert!(
+                loadout.contains(key),
+                "Missing {key} in the officer loadout"
+            );
+        }
+        for mode in Mode::ALL {
+            let bytes = raw(
+                &pack,
+                &format!("campaigns/{CAMPAIGN}/startpos_{}.esf", mode.key()),
+            )?;
+            let (_, world) = trom::campaign_documents(&bytes)?;
+            let owned = world.one(&world.root, "ALL_OWNED_CEOS")?;
+            let mounts: std::collections::BTreeSet<_> = owned
+                .groups
+                .iter()
+                .filter(|r| world.text(&r[0]) == Some(RED_HARE))
+                .map(|r| world.id(&r[1].fields()[0]))
+                .collect::<Result<_>>()?;
+            assert!(
+                mounts.len() >= 2,
+                "Preserve the historical mount and reserve an independent copy"
+            );
+            let attr = format!("{officer_key}_attributes_{}", mode.key());
+            let rows = game::rows_at(&pack, &db_path("character_attributes", &attr))?;
+            assert!(
+                rows.iter()
+                    .any(|r| field(r, "attribute_type") == "cunning" && r["base_value"] == 107)
             );
         }
         let ages = game::rows_at(
