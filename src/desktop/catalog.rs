@@ -33,6 +33,7 @@ pub(super) const RARITIES: [(&str, &str, u32); 4] = [
 pub(super) enum Catalog {
     Portraits,
     Traits,
+    Careers,
     Equipment,
     Workshop,
 }
@@ -42,6 +43,7 @@ impl Catalog {
         match self {
             Self::Portraits => "portraits",
             Self::Traits => "traits",
+            Self::Careers => "careers",
             Self::Equipment => "items",
             Self::Workshop => "packs",
         }
@@ -50,6 +52,7 @@ impl Catalog {
     pub fn page_size(self, view: TraitView) -> usize {
         match self {
             Self::Portraits => 24,
+            Self::Careers => 8,
             Self::Traits if view == TraitView::List => 10,
             Self::Traits | Self::Equipment | Self::Workshop => 12,
         }

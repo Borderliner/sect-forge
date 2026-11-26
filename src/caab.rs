@@ -142,7 +142,17 @@ pub struct Document {
 
 impl Document {
     pub fn read(bytes: &[u8]) -> Result<Self> {
-        let (data, prefix, strings) = split(bytes)?;
+        Self::from_parts(split(bytes)?)
+    }
+
+    // Some Workshop character catalogs contain legacy encodings in unused text fields.
+    pub(crate) fn read_catalog(bytes: &[u8]) -> Result<Self> {
+        Self::from_parts(crate::startpos::split_with(bytes, |value| {
+            Ok(String::from_utf8_lossy(value).into_owned())
+        })?)
+    }
+
+    fn from_parts((data, prefix, strings): (Vec<u8>, Vec<u8>, Strings)) -> Result<Self> {
         let count = short(&prefix, 0)?;
         let mut names = Vec::with_capacity(count.into());
         let mut at = 2;

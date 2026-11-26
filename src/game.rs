@@ -23,7 +23,9 @@ use rpfm_lib::{
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+mod careers;
 mod ceo;
+pub use careers::Career;
 mod equipment;
 mod traits;
 pub use equipment::{Equipment, EquipmentCatalog, EquipmentStats};

@@ -7,6 +7,8 @@ local doctrines = { __DOCTRINE_GAINS__ }
 local thresholds = { __INFLUENCE_TIERS__ }
 local influence_cap = __INFLUENCE_CAP__
 local starting_traits = { __STARTING_TRAITS__ }
+local starting_career = "__STARTING_CAREER__"
+local starting_officers = { __STARTING_OFFICERS__ }
 local starting_ancillaries = { __STARTING_ANCILLARIES__ }
 local starting_region = "__START_REGION__"
 local start_x, start_y = __START_X__, __START_Y__
@@ -189,6 +191,42 @@ local function set_starting_traits(owner)
         script_error("Sect Forge could not activate all starting traits for " .. faction_key)
     end
     output("[SectForge] " .. faction_key .. " starting traits=" .. table.concat(applied, ", "))
+end
+
+local function set_starting_career(owner)
+    if starting_career == "" or not owner:has_faction_leader() then return end
+    local leader = owner:faction_leader()
+    local category = "3k_main_ceo_category_career"
+    local query = leader:ceo_management()
+    local modify = cm:modify_character(leader):ceo_management()
+    local defaults, careers = {}, query:all_ceos_for_category(category)
+    for i = 0, careers:num_items() - 1 do
+        local key = careers:item_at(i):ceo_data_key()
+        if key == starting_career then return end
+        defaults[#defaults + 1] = key
+    end
+    for _, key in ipairs(defaults) do modify:remove_ceos(key) end
+    modify:add_ceo(starting_career)
+    careers = query:all_ceos_for_category(category)
+    for i = 0, careers:num_items() - 1 do
+        if careers:item_at(i):ceo_data_key() == starting_career then return end
+    end
+    for _, key in ipairs(defaults) do modify:add_ceo(key) end
+    script_error("Sect Forge could not assign starting career " .. starting_career)
+end
+
+local function create_starting_officers(owner)
+    local modify = cm:modify_faction(owner)
+    for _, officer in ipairs(starting_officers) do
+        local template = officer[1]
+        local existing = cm:query_model():character_for_template(template)
+        if not existing or existing:is_null_interface() then
+            local created = modify:create_character_from_template("general", officer[2], template, true)
+            if not created or created:is_null_interface() then
+                script_error("Sect Forge could not create starting officer " .. template)
+            end
+        end
+    end
 end
 
 local function update_influence_effects()
@@ -380,7 +418,9 @@ cm:add_first_tick_callback_new(function()
     local owner = faction()
     if owner and not owner:is_null_interface() and not owner:is_dead() then
         set_starting_traits(owner)
+        set_starting_career(owner)
         equip_starting_ancillaries(owner)
+        if #starting_officers > 0 then create_starting_officers(owner) end
         if expanded_start then deploy_expanded_army(owner) end
         if not is_warlord then cm:modify_faction(faction_key):set_tech_research_cooldown(0) end
         if not start_preplaced and starting_region ~= hepu then place_starting_city(owner) end

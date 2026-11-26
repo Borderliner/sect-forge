@@ -15,7 +15,7 @@ impl Game {
         let pack = overlay
             .filter(|pack| pack.file(CEO_DATA, false).is_some())
             .unwrap_or(&self.pack);
-        Document::read(&raw(pack, CEO_DATA)?)
+        Document::read_catalog(&raw(pack, CEO_DATA)?)
             .context("Read the game's character and equipment data")
     }
 

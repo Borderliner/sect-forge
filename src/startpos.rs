@@ -162,6 +162,14 @@ pub fn size_field(value: usize, width: usize) -> Result<Vec<u8>> {
 }
 
 pub fn split(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Strings)> {
+    split_with(data, |bytes| Ok(std::str::from_utf8(bytes)?.into()))
+}
+
+pub(crate) fn split_with(
+    data: &[u8],
+    decode: impl FnMut(&[u8]) -> Result<String>,
+) -> Result<(Vec<u8>, Vec<u8>, Strings)> {
+    let mut decode = decode;
     ensure!(
         data.starts_with(&[0xca, 0xab, 0, 0]),
         "Expected a CAAB document"
@@ -189,9 +197,9 @@ pub fn split(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Strings)> {
         let len = short(data, at)? as usize;
         at += 2;
         let index = uint(data, at + len)?;
-        let value = std::str::from_utf8(&data[at..at + len])?;
+        let value = decode(&data[at..at + len])?;
         ensure!(
-            strings.insert(index, value.into()).is_none(),
+            strings.insert(index, value).is_none(),
             "Duplicate CAAB string index"
         );
         at += len + 4;

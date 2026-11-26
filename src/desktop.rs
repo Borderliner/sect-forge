@@ -29,18 +29,21 @@ use rpfm_lib::files::{Container, pack::Pack};
 
 use crate::{
     config::{
-        CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MAX_FOUNDER_TITLE, MIN_FOUNDER_AGE, SETTLEMENTS,
-        SLOTS, Settlement, Variant, WARLORDS, WarlordFamily, output_dir,
+        Attribute, CLASSES, Config, HEPU, MAX_FOUNDER_AGE, MAX_FOUNDER_TITLE, MIN_FOUNDER_AGE,
+        SETTLEMENTS, SLOTS, Settlement, Variant, WARLORDS, WarlordFamily, output_dir,
     },
     expanded, export,
-    game::{self, EquipmentCatalog, EquipmentStats, Game, MAP_IMAGE, Trait, TraitCategory},
+    game::{self, Career, EquipmentCatalog, EquipmentStats, Game, MAP_IMAGE, Trait, TraitCategory},
     portraits::{self, Portrait},
     trom,
 };
 
 mod catalog;
+mod founder_options;
 mod game_font;
 mod name_generator;
+#[cfg(windows)]
+mod updater;
 mod warlord_picker;
 use catalog::{Catalog, CatalogPage, RARITIES, TRAIT_CATEGORIES, TraitView};
 use game_font::GameHeadingFont;
@@ -109,6 +112,8 @@ struct Library {
     portraits: Vec<Portrait>,
     traits: Vec<Trait>,
     trait_error: Option<String>,
+    careers: Result<Vec<Career>, String>,
+    trom_careers: Option<Result<Vec<Career>, String>>,
     equipment: Result<EquipmentCatalog, String>,
     trom_equipment: Option<Result<EquipmentCatalog, String>>,
     trom_art: Option<[usize; 2]>,
@@ -125,6 +130,7 @@ struct Source {
 struct ExpandedMap {
     map: expanded::CampaignMap,
     art: usize,
+    careers: Result<Vec<Career>, String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -150,6 +156,8 @@ enum FounderTab {
     Portrait,
     Traits,
     Loadout,
+    Career,
+    Officers,
 }
 
 #[derive(Clone, Copy)]
@@ -211,6 +219,10 @@ struct Editor {
     colour_pickers: [Entity<ColorPickerState>; 2],
     founder_age: Entity<InputState>,
     founder_title: Entity<InputState>,
+    attribute_inputs: [Entity<InputState>; 5],
+    officer_draft: founder_options::OfficerDraft,
+    #[cfg(windows)]
+    update_status: updater::Status,
     search: Entity<InputState>,
     pack_search: Entity<InputState>,
     subscriptions: Vec<Subscription>,
@@ -293,11 +305,13 @@ impl Editor {
                 .placeholder("e.g. Magistrate")
                 .validate(|value, _| value.chars().count() <= MAX_FOUNDER_TITLE)
         });
+        let mut subscriptions = Vec::new();
+        let attribute_inputs = Self::attribute_inputs(window, cx, &mut subscriptions);
+        let officer_draft = founder_options::OfficerDraft::new(window, cx);
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search by name"));
         let pack_search = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Filter packs by name or Workshop ID")
         });
-        let mut subscriptions = Vec::new();
         subscriptions.push(cx.subscribe(
             &founder_title,
             |editor, input, event: &InputEvent, cx| {
@@ -440,11 +454,17 @@ impl Editor {
             colour_pickers,
             founder_age,
             founder_title,
+            attribute_inputs,
+            officer_draft,
+            #[cfg(windows)]
+            update_status: updater::Status::Checking,
             search,
             pack_search,
             subscriptions,
         };
         editor.load_game(cx);
+        #[cfg(windows)]
+        editor.check_for_update(cx);
         editor
     }
 
@@ -465,12 +485,18 @@ impl Editor {
                 Err(error) => (Vec::new(), Some(format!("{error:#}"))),
             };
             let workshop = game::workshop_packs();
+            let careers = game.careers(&[]).map_err(|error| format!("{error:#}"));
             let equipment = game.equipment(None).map_err(|error| format!("{error:#}"));
             let mut trom_art = None;
+            let mut trom_careers = None;
             let trom_equipment = trom::packs(&workshop).ok().map(|[part_one, part_two]| {
                 (|| -> Result<_> {
                     let a = Arc::new(game::open_pack(&part_one)?);
                     let b = Arc::new(game::open_pack(&part_two)?);
+                    trom_careers = Some(
+                        game.careers(&[&a, &b])
+                            .map_err(|error| format!("{error:#}")),
+                    );
                     let catalog = game.equipment(Some([&a, &b]))?;
                     trom_art = Some([artwork.register(a), artwork.register(b)]);
                     Ok(catalog)
@@ -486,6 +512,8 @@ impl Editor {
                     portraits,
                     traits,
                     trait_error,
+                    careers,
+                    trom_careers,
                     equipment,
                     trom_equipment,
                     trom_art,
@@ -695,6 +723,16 @@ impl Editor {
                             editor.founder_title.update(cx, |input, cx| {
                                 input.set_value(config.founder_title.clone(), window, cx);
                             });
+                            for (input, attribute) in
+                                editor.attribute_inputs.iter().zip(Attribute::ALL)
+                            {
+                                let value = config
+                                    .founder_attributes
+                                    .get(&attribute)
+                                    .map_or_else(String::new, u16::to_string);
+                                input.update(cx, |input, cx| input.set_value(value, window, cx));
+                            }
+                            editor.officer_draft.reset(window, cx);
                             if let Some(warlord) = config.warlord() {
                                 editor.playstyle_family = warlord.family;
                             }
@@ -864,12 +902,15 @@ impl Editor {
         {
             return;
         }
-        let [path, _] = match expanded::packs(&self.workshop) {
+        let [path, character_path] = match expanded::packs(&self.workshop) {
             Ok(paths) => paths,
             Err(error) => {
                 self.expanded_map = Some(Err(error.to_string()));
                 return;
             }
+        };
+        let Some(game) = self.library.as_ref().map(|library| library.game.clone()) else {
+            return;
         };
         self.expanded_loading = true;
         let work = cx.background_executor().spawn(async move {
@@ -878,7 +919,11 @@ impl Editor {
                 pack.file(MAP_IMAGE, true).is_some(),
                 "190 Expanded’s campaign map image is missing."
             );
-            Ok::<_, anyhow::Error>((pack.clone(), expanded::catalog(&pack)?))
+            let map = expanded::catalog(&pack)?;
+            let careers = game::open_pack(&character_path)
+                .and_then(|characters| game.expanded_careers(&pack, &characters))
+                .map_err(|error| format!("{error:#}"));
+            Ok::<_, anyhow::Error>((pack, map, careers))
         });
         cx.spawn(async move |entity, cx| {
             let result = work.await;
@@ -886,9 +931,10 @@ impl Editor {
                 .update(cx, |editor, cx| {
                     editor.expanded_loading = false;
                     editor.expanded_map = Some(match result {
-                        Ok((pack, map)) => Ok(ExpandedMap {
+                        Ok((pack, map, careers)) => Ok(ExpandedMap {
                             map,
                             art: editor.artwork.register(pack),
+                            careers,
                         }),
                         Err(error) => Err(format!("{error:#}")),
                     });
@@ -1222,6 +1268,7 @@ impl Editor {
                             )
                             .child(caption(concat!("v", env!("CARGO_PKG_VERSION")))),
                     )
+                    .children(self.update_notice(cx))
                     .child(
                         control("game-folder", false)
                             .justify_start()
@@ -1229,6 +1276,96 @@ impl Editor {
                             .on_click(cx.listener(|this, _, _, cx| this.pick_folder(false, cx))),
                     ),
             )
+    }
+
+    fn update_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        #[cfg(not(windows))]
+        {
+            let _ = cx;
+            None
+        }
+        #[cfg(windows)]
+        {
+            match &self.update_status {
+                updater::Status::Available(update) => {
+                    let update = update.clone();
+                    Some(
+                        control("install-update", false)
+                            .child(format!("Update to v{}", update.version))
+                            .on_click(cx.listener(move |editor, _, _, cx| {
+                                editor.stage_update(update.clone(), cx)
+                            }))
+                            .into_any_element(),
+                    )
+                }
+                updater::Status::Downloading => {
+                    Some(body("Downloading update…").into_any_element())
+                }
+                updater::Status::Ready => Some(
+                    notice("Update installs when you close Sect Forge.", JADE).into_any_element(),
+                ),
+                updater::Status::Error(error) => Some(
+                    col()
+                        .gap_1()
+                        .child(body(error.clone()))
+                        .child(
+                            control("retry-update", false)
+                                .child("Retry update check")
+                                .on_click(
+                                    cx.listener(|editor, _, _, cx| editor.check_for_update(cx)),
+                                ),
+                        )
+                        .into_any_element(),
+                ),
+                _ => None,
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn check_for_update(&mut self, cx: &mut Context<Self>) {
+        self.update_status = updater::Status::Checking;
+        let work = cx.background_executor().spawn(async { updater::check() });
+        cx.spawn(async move |entity, cx| {
+            let result = work.await;
+            entity
+                .update(cx, |editor, cx| {
+                    editor.update_status = match result {
+                        Ok(Some(update)) => updater::Status::Available(Arc::new(update)),
+                        Ok(None) => updater::Status::Current,
+                        Err(_) => updater::Status::Error("Couldn’t check for updates.".into()),
+                    };
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    #[cfg(windows)]
+    fn stage_update(&mut self, update: Arc<updater::Update>, cx: &mut Context<Self>) {
+        if !matches!(self.update_status, updater::Status::Available(_)) {
+            return;
+        }
+        self.update_status = updater::Status::Downloading;
+        let work = cx
+            .background_executor()
+            .spawn(async move { updater::stage(&update) });
+        cx.spawn(async move |entity, cx| {
+            let result = work.await;
+            entity
+                .update(cx, |editor, cx| {
+                    editor.update_status = match result {
+                        Ok(()) => updater::Status::Ready,
+                        Err(error) => updater::Status::Error(error.to_string()),
+                    };
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+        cx.notify();
     }
 
     fn header(&self, title: &'static str, description: &'static str) -> Div {
@@ -1453,9 +1590,11 @@ impl Editor {
     fn founder(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let tabs = [
             (FounderTab::Identity, "Personal details"),
+            (FounderTab::Career, "Career"),
             (FounderTab::Portrait, "Portrait"),
             (FounderTab::Traits, "Traits"),
             (FounderTab::Loadout, "Equipment"),
+            (FounderTab::Officers, "Starting officers"),
         ];
         col()
             .gap_5()
@@ -1492,6 +1631,8 @@ impl Editor {
                 FounderTab::Portrait => self.portraits(cx),
                 FounderTab::Traits => self.traits(window, cx),
                 FounderTab::Loadout => self.equipment(cx),
+                FounderTab::Career => self.career_picker(cx),
+                FounderTab::Officers => self.officers(cx),
             })
             .into_any_element()
     }
@@ -1509,16 +1650,18 @@ impl Editor {
                 col()
                     .gap_2()
                     .child(caption("Character title"))
-                    .child(Input::new(&self.founder_title).w_full()),
+                    .child(Input::new(&self.founder_title).w_full())
+                    .child(body("Shown on campaign selection and loading screens.")),
             )
             .child(self.toggle(
                 "legendary-founder",
                 "Legendary founder",
-                "Start with a legendary primary attribute and a unique character template.",
+                "Marks the founder as unique and boosts their default primary attribute.",
                 self.config.legendary_founder,
                 |editor, _| editor.config.legendary_founder = !editor.config.legendary_founder,
                 cx,
             ))
+            .child(self.founder_attributes())
             .child(
                 col()
                     .gap_2()

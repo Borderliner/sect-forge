@@ -8,9 +8,14 @@ use anyhow::{Context, Result, ensure};
 use rpfm_lib::files::{Container, pack::Pack};
 use serde_json::Value;
 
+mod officers;
+
 use crate::{
     buildings, campaign_actions,
-    config::{BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, SLOTS, Settlement, Variant},
+    config::{
+        Attribute, BASE_KEY, CAMPAIGN, CLASSES, Config, HAN, HEPU, Officer, SLOTS, Settlement,
+        Variant,
+    },
     doctrines, expanded,
     game::{self, Game, Localization, Row, add, add_loc, add_rows, db_path, field, raw, rows, set},
     portraits::{self, FounderArt},
@@ -59,7 +64,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
     let cult = config.variant == Variant::Cult;
     let warlord = config.warlord();
     let mut dependencies = BTreeSet::new();
-    let expanded_pack = if config.expanded_compat {
+    let expanded_packs = if config.expanded_compat {
         report("Reading 190 Expanded’s Extra Regions");
         let paths = expanded::packs(&game::workshop_packs())?;
         dependencies.extend(
@@ -68,11 +73,12 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
                 .filter_map(|path| path.file_name())
                 .map(|name| name.to_string_lossy().into_owned()),
         );
-        Some(game::open_pack(&paths[0])?)
+        Some([game::open_pack(&paths[0])?, game::open_pack(&paths[1])?])
     } else {
         None
     };
-    let expanded_sites = expanded_pack.as_ref().map(expanded::catalog).transpose()?;
+    let expanded_pack = expanded_packs.as_ref().map(|[regions, _]| regions);
+    let expanded_sites = expanded_pack.map(expanded::catalog).transpose()?;
     let site = match &expanded_sites {
         Some(map) => map
             .sites
@@ -121,6 +127,17 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         None
     };
     let trom_pack = trom_packs.as_ref().map(|[part, _]| part);
+    if let Some(career) = &config.starting_career {
+        let careers = match (&expanded_packs, &trom_packs) {
+            (Some([regions, characters]), _) => game.expanded_careers(regions, characters)?,
+            (_, Some([part1, part2])) => game.careers(&[part1, part2])?,
+            _ => game.careers(&[])?,
+        };
+        ensure!(
+            careers.iter().any(|item| &item.key == career),
+            "Starting career {career} is unavailable in this campaign."
+        );
+    }
     let warlord_sources = warlords::Sources::new(&game.pack, trom_pack);
     let playstyle = warlord
         .map(|entry| warlord_sources.playstyle(entry))
@@ -208,16 +225,13 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             generated = trom::merge(&raw(trom, &path)?, &generated, mode, &key, &config)
                 .with_context(|| format!("Merge the {} TROM campaign", mode.key()))?;
         }
-        if let Some(expanded) = &expanded_pack {
+        if let Some(expanded) = expanded_pack {
             generated = expanded::merge(expanded, &generated, mode, &key, site)
                 .with_context(|| format!("Merge the {} 190 Expanded campaign", mode.key()))?;
         }
         if let Some(warlord) = warlord {
             generated = warlords::startpos(
-                &raw(
-                    trom_pack.or(expanded_pack.as_ref()).unwrap_or(&game.pack),
-                    &path,
-                )?,
+                &raw(trom_pack.or(expanded_pack).unwrap_or(&game.pack), &path)?,
                 &generated,
                 warlord,
                 &key,
@@ -249,6 +263,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
         playstyle.as_ref(),
     )?;
     let mut loc = localization(&config, site, &key);
+    officers::write(&game.pack, &template, &mut pack, &mut loc, &config, &key)?;
     variant(&game.pack, &mut pack, &mut loc, &config, &key)?;
     if let Some(entry) = warlord {
         warlord_sources.write(&mut pack, entry, &key)?;
@@ -588,8 +603,8 @@ fn faction_rows(
                     {
                         row.extend(class.0.clone());
                     }
-                    if config.legendary_founder {
-                        set_legendary_attributes(game, pack, row, key, element)?;
+                    if config.legendary_founder || !config.founder_attributes.is_empty() {
+                        set_founder_attributes(game, pack, row, key, config)?;
                     }
                 }
                 "frontend_characters" => {
@@ -679,39 +694,37 @@ fn faction_rows(
     )
 }
 
-fn set_legendary_attributes(
+fn set_founder_attributes(
     game: &Pack,
     pack: &mut Pack,
     template: &mut Row,
     key: &str,
-    element: &str,
+    config: &Config,
 ) -> Result<()> {
     let original = field(template, "attribute_set");
     let mode = field(template, "game_mode");
     let set_key = format!("{key}_founder_attributes_{mode}");
-    let primary = match element {
-        "wood" if mode == "historical" => "resolve_records",
-        "wood" => "resolve",
-        "fire" => "instinct",
-        "earth" => "authority",
-        "metal" => "expertise",
-        _ => "cunning",
-    };
+    let primary = Attribute::primary(config.element());
     let mut attributes: Vec<_> = rows(game, "character_attributes")?
         .into_iter()
         .filter(|attribute| field(attribute, "set_name") == original)
         .collect();
-    let main = attributes
-        .iter_mut()
-        .find(|attribute| field(attribute, "attribute_type") == primary)
-        .with_context(|| format!("Missing {primary} in the {original} attribute set"))?;
-    let base = main["base_value"]
-        .as_i64()
-        .context("Invalid base attribute")?;
-    let max = main["max_range"]
-        .as_i64()
-        .context("Invalid attribute cap")?;
-    set(main, "base_value", (base + 80).min(max));
+    for attribute in Attribute::ALL {
+        let key = attribute.db_key(mode);
+        let row = attributes
+            .iter_mut()
+            .find(|row| field(row, "attribute_type") == key)
+            .with_context(|| format!("Missing {key} in the {original} attribute set"))?;
+        if let Some(&value) = config.founder_attributes.get(&attribute) {
+            set(row, "base_value", value);
+        } else if config.legendary_founder && attribute == primary {
+            let base = row["base_value"]
+                .as_i64()
+                .context("Invalid base attribute")?;
+            let max = row["max_range"].as_i64().context("Invalid attribute cap")?;
+            set(row, "base_value", (base + 80).min(max));
+        }
+    }
     for attribute in &mut attributes {
         set(attribute, "set_name", set_key.as_str());
     }
@@ -979,9 +992,27 @@ fn scripts(
     let influence_cap = doctrines::influence_cap(config.variant).to_string();
     let start_x = site.x.to_string();
     let start_y = site.y.to_string();
+    let officers = config
+        .officers
+        .iter()
+        .enumerate()
+        .map(|(index, officer)| {
+            format!(
+                "{{\"{}\", \"{}\"}}",
+                Officer::key(key, index),
+                officer.subtype
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     for (marker, value) in [
         ("__FACTION_KEY__", key),
         ("__STARTING_TRAITS__", traits.as_str()),
+        (
+            "__STARTING_CAREER__",
+            config.starting_career.as_deref().unwrap_or(""),
+        ),
+        ("__STARTING_OFFICERS__", officers.as_str()),
         ("__STARTING_ANCILLARIES__", equipment.as_str()),
         ("__START_REGION__", site.key.as_str()),
         ("__START_X__", start_x.as_str()),

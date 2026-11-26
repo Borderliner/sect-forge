@@ -11,6 +11,9 @@ pub const BASE_ART: &str = "3k_main_art_set_generic_male_48_general_wood";
 pub const MIN_FOUNDER_AGE: u8 = 18;
 pub const MAX_FOUNDER_AGE: u8 = 60;
 pub const MAX_FOUNDER_TITLE: usize = 64;
+pub const MAX_OFFICERS: usize = 12;
+pub const MIN_ATTRIBUTE: u16 = 5;
+pub const MAX_ATTRIBUTE: u16 = 200;
 pub const HEPU: &str = "3k_main_hepu_capital";
 pub const HAN: &str = "3k_main_faction_han_empire";
 pub const CAMPAIGN: &str = "3k_main_campaign_map";
@@ -28,6 +31,64 @@ pub const CLASSES: [(&str, &str, &str, u32); 5] = [
     ("3k_general_metal", "Sentinel", "purple", 0xb19dc8),
     ("3k_general_water", "Strategist", "blue", 0x7aaac4),
 ];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Attribute {
+    Authority,
+    Expertise,
+    Resolve,
+    Instinct,
+    Cunning,
+}
+
+impl Attribute {
+    pub const ALL: [Self; 5] = [
+        Self::Authority,
+        Self::Expertise,
+        Self::Resolve,
+        Self::Instinct,
+        Self::Cunning,
+    ];
+
+    pub fn db_key(self, mode: &str) -> &'static str {
+        match self {
+            Self::Authority => "authority",
+            Self::Expertise => "expertise",
+            Self::Resolve if mode == "historical" => "resolve_records",
+            Self::Resolve => "resolve",
+            Self::Instinct => "instinct",
+            Self::Cunning => "cunning",
+        }
+    }
+
+    pub fn primary(element: &str) -> Self {
+        match element {
+            "earth" => Self::Authority,
+            "metal" => Self::Expertise,
+            "wood" => Self::Resolve,
+            "fire" => Self::Instinct,
+            _ => Self::Cunning,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Officer {
+    pub forename: String,
+    pub surname: String,
+    #[serde(default = "default_subtype")]
+    pub subtype: String,
+    #[serde(default)]
+    pub female: bool,
+}
+
+impl Officer {
+    pub(crate) fn key(faction: &str, index: usize) -> String {
+        format!("{faction}_officer_{}", index + 1)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -68,6 +129,12 @@ pub struct Config {
     pub founder_title: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub legendary_founder: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub founder_attributes: BTreeMap<Attribute, u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starting_career: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub officers: Vec<Officer>,
     pub primary_colour: String,
     pub secondary_colour: String,
     #[serde(default)]
@@ -119,6 +186,9 @@ impl Default for Config {
             founder_age: default_founder_age(),
             founder_title: String::new(),
             legendary_founder: false,
+            founder_attributes: BTreeMap::new(),
+            starting_career: None,
+            officers: Vec::new(),
             primary_colour: "A34434".into(),
             secondary_colour: "D3AD6C".into(),
             faction_key: None,
@@ -224,6 +294,37 @@ impl Config {
                 && !self.founder_title.chars().any(char::is_control),
             "Founder title must contain at most {MAX_FOUNDER_TITLE} printable characters."
         );
+        ensure!(
+            self.founder_attributes
+                .values()
+                .all(|value| (MIN_ATTRIBUTE..=MAX_ATTRIBUTE).contains(value)),
+            "Base attributes must be between {MIN_ATTRIBUTE} and {MAX_ATTRIBUTE}."
+        );
+        ensure!(
+            self.starting_career
+                .as_deref()
+                .is_none_or(|key| ART_SET.is_match(key)),
+            "Invalid starting career key."
+        );
+        ensure!(
+            self.officers.len() <= MAX_OFFICERS,
+            "Choose up to {MAX_OFFICERS} starting officers."
+        );
+        for (index, officer) in self.officers.iter_mut().enumerate() {
+            for name in [&mut officer.forename, &mut officer.surname] {
+                *name = name.trim().to_owned();
+                ensure!(
+                    (1..=64).contains(&name.chars().count()) && !name.chars().any(char::is_control),
+                    "Officer {} needs a given and family name of 1 to 64 printable characters.",
+                    index + 1
+                );
+            }
+            ensure!(
+                CLASSES.iter().any(|class| class.0 == officer.subtype),
+                "Choose a class for officer {}.",
+                index + 1
+            );
+        }
         for value in [&mut self.primary_colour, &mut self.secondary_colour] {
             *value = value.trim().trim_start_matches('#').to_ascii_uppercase();
             ensure!(
