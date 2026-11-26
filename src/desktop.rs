@@ -45,7 +45,7 @@ mod name_generator;
 #[cfg(windows)]
 mod updater;
 mod warlord_picker;
-use catalog::{Catalog, CatalogPage, RARITIES, TRAIT_CATEGORIES, TraitView};
+use catalog::{Catalog, CatalogPage, CatalogView, RARITIES, TRAIT_CATEGORIES};
 use game_font::GameHeadingFont;
 use name_generator::Gender;
 
@@ -202,7 +202,8 @@ struct Editor {
     slot: &'static str,
     equipment_rarity: Option<&'static str>,
     trait_category: Option<TraitCategory>,
-    trait_view: TraitView,
+    trait_view: CatalogView,
+    career_view: CatalogView,
     portrait_filter: &'static str,
     city_filter: &'static str,
     results_page: usize,
@@ -437,7 +438,8 @@ impl Editor {
             slot: "weapon",
             equipment_rarity: None,
             trait_category: None,
-            trait_view: TraitView::List,
+            trait_view: CatalogView::List,
+            career_view: CatalogView::List,
             portrait_filter: "All",
             city_filter: "All",
             results_page: 0,
@@ -1631,7 +1633,7 @@ impl Editor {
                 FounderTab::Portrait => self.portraits(cx),
                 FounderTab::Traits => self.traits(window, cx),
                 FounderTab::Loadout => self.equipment(cx),
-                FounderTab::Career => self.career_picker(cx),
+                FounderTab::Career => self.career_picker(window, cx),
                 FounderTab::Officers => self.officers(cx),
             })
             .into_any_element()
@@ -2086,17 +2088,7 @@ impl Editor {
                     .child(caption(format!("{} / 3 selected", self.config.starting_traits.len()))))
                 .child(body("Choose up to three traits, including one physical trait. Leave empty to keep the campaign defaults."))
                 .child(row_ui().gap_2().flex_wrap().children(picks)))
-            .child(row_ui().gap_2().items_center()
-                .child(div().flex_1().min_w_0().child(self.search_box()))
-                .children(TraitView::ALL.map(|(view, label)| {
-                    control(format!("trait-view-{label}"), self.trait_view == view)
-                        .child(label)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.trait_view = view;
-                            this.results_page = 0;
-                            cx.notify();
-                        }))
-                })))
+            .child(self.catalog_search(Catalog::Traits, cx))
             .child(row_ui().gap_2().flex_wrap()
                 .children(std::iter::once((None, "All", MUTED))
                     .chain(TRAIT_CATEGORIES.map(|(category, label, tone)| (Some(category), label, tone)))
@@ -2113,7 +2105,7 @@ impl Editor {
                     })))
             .child(self.pagination(Catalog::Traits, page, false, cx))
             .child(col().gap_3()
-                .when(self.trait_view == TraitView::Grid, |grid| grid.grid().grid_cols(columns))
+                .when(self.trait_view == CatalogView::Grid, |grid| grid.grid().grid_cols(columns))
                 .children(entries[page.range()].iter().map(|item| self.trait_card(item, cx))))
             .when(entries.is_empty(), |element| element.child(notice("No matching traits.", MUTED)))
             .when(page.pages > 1, |list| list.child(self.pagination(Catalog::Traits, page, true, cx)))
@@ -2139,7 +2131,7 @@ impl Editor {
             .iter()
             .find(|(category, _, _)| Some(*category) == item.category);
         let icon = item.icon.as_deref().and_then(|path| self.art(path));
-        let grid = self.trait_view == TraitView::Grid;
+        let grid = self.trait_view == CatalogView::Grid;
         let marker = if selected {
             "✓"
         } else if can_add {
@@ -2401,13 +2393,45 @@ impl Editor {
             .into_any_element()
     }
 
+    fn catalog_view(&self, catalog: Catalog) -> CatalogView {
+        if catalog == Catalog::Careers {
+            self.career_view
+        } else {
+            self.trait_view
+        }
+    }
+
+    fn catalog_search(&self, catalog: Catalog, cx: &mut Context<Self>) -> Div {
+        row_ui()
+            .gap_2()
+            .items_center()
+            .child(div().flex_1().min_w_0().child(self.search_box()))
+            .children(CatalogView::ALL.map(|(view, label)| {
+                control(
+                    format!("{}-view-{label}", catalog.label()),
+                    self.catalog_view(catalog) == view,
+                )
+                .child(label)
+                .on_click(cx.listener(move |editor, _, _, cx| {
+                    if catalog == Catalog::Careers {
+                        editor.career_view = view;
+                        editor.inspecting = None;
+                    } else {
+                        editor.trait_view = view;
+                    }
+                    editor.results_page = 0;
+                    cx.notify();
+                }))
+            }))
+    }
+
     fn catalog_page(&self, catalog: Catalog, length: usize) -> CatalogPage {
         let page = if catalog == Catalog::Workshop {
             self.workshop_page
         } else {
             self.results_page
         };
-        CatalogPage::new(page, catalog.page_size(self.trait_view), length)
+        CatalogPage::new(page, catalog.page_size(self.catalog_view(catalog)), length)
     }
 
     fn pagination(

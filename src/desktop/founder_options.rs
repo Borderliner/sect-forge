@@ -1,14 +1,15 @@
 use super::{
-    Attribute, Button, CINNABAR, CLASSES, Career, Catalog, CatalogPage, Context, Div, Editor,
-    Entity, GOLD, Gender, Input, InputEvent, InputState, JADE, Window, body, caption, col, control,
-    dot, name_generator, notice, panel, px, row_ui,
+    Attribute, Button, CINNABAR, CLASSES, Career, Catalog, CatalogView, Context, Div, Editor,
+    Entity, GOLD, Gender, Input, InputEvent, InputState, LINE, PAPER, SharedString, Stateful,
+    Window, body, caption, col, control, dot, matches_text, name_generator, notice, panel, px,
+    relative, rgb, row_ui,
 };
 use crate::{
     config::{MAX_ATTRIBUTE, MAX_OFFICERS, MIN_ATTRIBUTE, Officer},
     portraits::words,
 };
 use gpui::prelude::*;
-use gpui_component::Disableable;
+use gpui_component::{Disableable, Selectable, Sizable, button::ButtonVariants};
 
 pub(super) struct OfficerDraft {
     names: [Entity<InputState>; 2],
@@ -137,105 +138,224 @@ impl Editor {
         }
     }
 
-    pub(super) fn career_picker(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn career_picker(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let selected = self.config.starting_career.as_deref();
-        let mut sheet = col().gap_4().child(
-            panel()
-                .gap_2()
-                .child(caption("In-game background"))
-                .child(body(
-                    "Choose a career to give the founder its title and effects.",
-                ))
-                .child(
-                    control("default-career", selected.is_none())
-                        .child("Class default")
-                        .on_click(cx.listener(|editor, _, _, cx| {
-                            editor.config.starting_career = None;
-                            editor.edited(cx);
-                        })),
-                ),
-        );
         let careers = match self.available_careers() {
             Some(Ok(items)) => items,
-            Some(Err(error)) => {
-                return sheet
-                    .child(notice(error.clone(), CINNABAR))
-                    .into_any_element();
-            }
+            Some(Err(error)) => return notice(error.clone(), CINNABAR).into_any_element(),
             None => {
-                return sheet
-                    .child(body("Waiting for the selected campaign’s character data."))
+                return body("Waiting for the selected campaign’s character data.")
                     .into_any_element();
             }
         };
-        if let Some(key) = selected {
-            let title = careers.iter().find(|item| item.key == key);
-            sheet = sheet.child(match title {
-                Some(career) => notice(format!("Selected career · {}", career.title), JADE),
-                None => notice(
-                    "The selected career is unavailable in this campaign.",
-                    CINNABAR,
-                ),
-            });
-        }
-        let query = self.search.read(cx).value().to_lowercase();
-        let filtered: Vec<_> = careers
+        let (current, tone) = match selected {
+            None => ("Class default", PAPER),
+            Some(key) => careers
+                .iter()
+                .find(|career| career.key == key)
+                .map_or(("Unavailable in this campaign", CINNABAR), |career| {
+                    (career.title.as_str(), GOLD)
+                }),
+        };
+        let query = self.query(cx);
+        let entries: Vec<_> = careers
             .iter()
-            .filter(|career| {
-                career.title.to_lowercase().contains(&query)
-                    || career.key.replace('_', " ").to_lowercase().contains(&query)
-            })
+            .filter(|career| matches_text(&query, &[&career.title, &career.key]))
             .collect();
-        let page = CatalogPage::new(
-            self.results_page,
-            Catalog::Careers.page_size(self.trait_view),
-            filtered.len(),
-        );
-        sheet
-            .child(Input::new(&self.search))
-            .child(self.pagination(Catalog::Careers, page, false, cx))
-            .children(filtered[page.range()].iter().map(|career| {
-                let key = career.key.clone();
-                let chosen = selected == Some(key.as_str());
-                let historical_name = key
-                    .split_once("_career_historical_")
-                    .map(|(_, name)| words(name));
-                panel()
+        let page = self.catalog_page(Catalog::Careers, entries.len());
+        let grid = self.career_view == CatalogView::Grid;
+        let columns = if window.viewport_size().width >= px(1200.) {
+            3
+        } else {
+            2
+        };
+        col()
+            .gap_2()
+            .child(
+                row_ui()
+                    .items_center()
                     .gap_2()
+                    .min_h(px(26.))
+                    .flex_wrap()
+                    .child(caption("In-game background"))
+                    .child(body(current.to_owned()).text_color(rgb(tone)))
+                    .when(selected.is_some(), |row| {
+                        row.child(
+                            Button::new("default-career")
+                                .ghost()
+                                .small()
+                                .compact()
+                                .label("Use class default")
+                                .on_click(cx.listener(|editor, _, _, cx| {
+                                    editor.config.starting_career = None;
+                                    editor.edited(cx);
+                                })),
+                        )
+                    }),
+            )
+            .child(self.catalog_search(Catalog::Careers, cx))
+            .child(self.pagination(Catalog::Careers, page, false, cx))
+            .child(
+                col()
+                    .gap_2()
+                    .when(grid, |results| {
+                        results.grid().grid_cols(columns).items_start()
+                    })
+                    .children(
+                        entries[page.range()]
+                            .iter()
+                            .map(|career| self.career_entry(career, grid, cx)),
+                    ),
+            )
+            .when(entries.is_empty(), |sheet| {
+                sheet.child(body("No careers match your search."))
+            })
+            .when(page.pages > 1, |sheet| {
+                sheet.child(self.pagination(Catalog::Careers, page, true, cx))
+            })
+            .into_any_element()
+    }
+
+    fn career_entry(&self, career: &Career, grid: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        let key = &career.key;
+        let chosen = self.config.starting_career.as_ref() == Some(key);
+        let expanded = self.inspecting.as_ref() == Some(key);
+        let historical_name = key
+            .split_once("_career_historical_")
+            .map(|(_, name)| words(name));
+        let effects = &career.effects[..career.effects.len().min(2)];
+        let remaining = career.effects.len() - effects.len();
+        let modifiers = if effects.is_empty() {
+            vec!["No listed gameplay modifiers".into()]
+        } else if grid {
+            effects.to_vec()
+        } else {
+            vec![effects.join("  •  ")]
+        };
+        let preview = col()
+            .flex_1()
+            .min_w_0()
+            .when(grid, |preview| preview.min_h(px(32.)))
+            .children(modifiers.into_iter().map(|effect| {
+                body(effect)
+                    .text_size(px(12.))
+                    .line_height(px(16.))
+                    .truncate()
+            }));
+        let details_key = key.clone();
+        let select_key = key.clone();
+        panel()
+            .id(SharedString::from(key.clone()))
+            .min_w_0()
+            .px_3()
+            .py_2()
+            .gap_2()
+            .when(chosen, |entry| entry.border_color(rgb(GOLD)))
+            .child(
+                row_ui()
+                    .min_w_0()
+                    .gap_2()
+                    .when(grid, |entry| entry.flex_col().gap_1())
+                    .when(!grid, |entry| entry.items_center())
+                    .child(
+                        col()
+                            .min_w_0()
+                            .when(grid, |name| name.min_h(px(34.)))
+                            .when(!grid, |name| name.w(relative(0.28)).flex_shrink_0())
+                            .child(
+                                body(career.title.clone())
+                                    .text_color(rgb(PAPER))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .line_height(px(17.)),
+                            )
+                            .when_some(historical_name, |name, donor| {
+                                name.child(caption(donor).line_height(px(17.)))
+                            }),
+                    )
+                    .when(!expanded, |entry| {
+                        entry.child(
+                            row_ui()
+                                .items_center()
+                                .gap_2()
+                                .min_w_0()
+                                .flex_1()
+                                .child(preview)
+                                .when(remaining > 0 && !grid, |row| {
+                                    row.child(caption(format!("+{remaining} more")).flex_shrink_0())
+                                }),
+                        )
+                    })
+                    .when(expanded && !grid, |entry| entry.child(gpui::div().flex_1()))
                     .child(
                         row_ui()
-                            .gap_3()
+                            .gap_1()
+                            .justify_end()
                             .items_center()
+                            .flex_shrink_0()
+                            .when(grid && !expanded && remaining > 0, |actions| {
+                                actions.child(caption(format!("+{remaining} more")).flex_1())
+                            })
                             .child(
-                                col()
-                                    .flex_1()
-                                    .gap_1()
-                                    .child(caption(career.title.clone()))
-                                    .when_some(historical_name, |column, name| {
-                                        column.child(body(name))
-                                    }),
+                                Button::new("career-details")
+                                    .ghost()
+                                    .small()
+                                    .compact()
+                                    .label(if expanded { "Hide details" } else { "Details" })
+                                    .on_click(cx.listener(move |editor, _, _, cx| {
+                                        editor.inspecting = if expanded {
+                                            None
+                                        } else {
+                                            Some(details_key.clone())
+                                        };
+                                        cx.notify();
+                                    })),
                             )
                             .child(
-                                control(key.clone(), chosen)
-                                    .child(if chosen { "Selected" } else { "Select" })
+                                Button::new("select-career")
+                                    .outline()
+                                    .small()
+                                    .compact()
+                                    .selected(chosen)
+                                    .label(if chosen { "Selected" } else { "Select" })
                                     .on_click(cx.listener(move |editor, _, _, cx| {
-                                        editor.config.starting_career = Some(key.clone());
+                                        editor.config.starting_career = Some(select_key.clone());
                                         editor.edited(cx);
                                     })),
                             ),
-                    )
-                    .when(!career.description.is_empty(), |panel| {
-                        panel.child(body(career.description.clone()))
-                    })
-                    .children(
-                        career
-                            .effects
-                            .iter()
-                            .map(|effect| notice(effect.clone(), GOLD)),
-                    )
-            }))
-            .child(self.pagination(Catalog::Careers, page, true, cx))
-            .into_any_element()
+                    ),
+            )
+            .when(expanded, |entry| {
+                entry.child(
+                    col()
+                        .gap_1()
+                        .pt_2()
+                        .border_t_1()
+                        .border_color(rgb(LINE))
+                        .when(!career.description.is_empty(), |details| {
+                            details.child(body(career.description.clone()).pb_1())
+                        })
+                        .children(career.effects.iter().map(|effect| {
+                            row_ui()
+                                .gap_2()
+                                .items_start()
+                                .child(caption("•").text_color(rgb(GOLD)).flex_shrink_0())
+                                .child(
+                                    body(effect.clone())
+                                        .flex_1()
+                                        .min_w_0()
+                                        .text_size(px(12.))
+                                        .text_color(rgb(PAPER)),
+                                )
+                        }))
+                        .when(career.effects.is_empty(), |details| {
+                            details.child(caption("No listed gameplay modifiers"))
+                        }),
+                )
+            })
     }
 
     fn save_officer(&mut self, window: &mut Window, cx: &mut Context<Self>) {

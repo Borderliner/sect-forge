@@ -3,12 +3,12 @@ use std::ops::Range;
 use crate::game::TraitCategory;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum TraitView {
+pub(super) enum CatalogView {
     List,
     Grid,
 }
 
-impl TraitView {
+impl CatalogView {
     pub const ALL: [(Self, &'static str); 2] = [(Self::List, "List"), (Self::Grid, "Grid")];
 }
 
@@ -49,12 +49,12 @@ impl Catalog {
         }
     }
 
-    pub fn page_size(self, view: TraitView) -> usize {
+    pub fn page_size(self, view: CatalogView) -> usize {
         match self {
             Self::Portraits => 24,
-            Self::Careers => 8,
-            Self::Traits if view == TraitView::List => 10,
-            Self::Traits | Self::Equipment | Self::Workshop => 12,
+            Self::Careers if view == CatalogView::Grid => 18,
+            Self::Traits if view == CatalogView::List => 10,
+            Self::Careers | Self::Traits | Self::Equipment | Self::Workshop => 12,
         }
     }
 }
