@@ -352,6 +352,16 @@ fn verify(original: &Pack, saved: &Pack, config: &Config) -> Result<()> {
         let (frontend, world) = trom::campaign_documents(&bytes)?;
         let key = config.key();
         let founder = world.record("PERSISTENT_CHARACTER", 10, &format!("{key}_leader"))?;
+        if !config.relationships.is_empty() {
+            let roster = crate::relationships::Roster::from_world(&world, &Localization::new())?;
+            let gender = founder.fields()[4]
+                .fields()
+                .get(5)
+                .context("Missing founder gender")?;
+            roster
+                .validate(config, world.raw(gender) == [0x12], &config.relationships)
+                .with_context(|| format!("Invalid starting relationships in {}", mode.key()))?;
+        }
         let birth = founder
             .fields()
             .get(7)
@@ -1020,6 +1030,19 @@ fn scripts(
         .collect::<Vec<_>>()
         .join(", ");
     let mut rules = include_str!("script/sect_rules.lua").to_owned();
+    let relationships = config
+        .relationships
+        .iter()
+        .map(|r| {
+            format!(
+                "{{\"{}\", \"{}\", \"{}\"}}",
+                r.first.key(config),
+                r.tie.key(),
+                r.second.key(config)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     let warlord = config.variant == Variant::Warlord;
     let gains = if warlord {
         String::new()
@@ -1051,6 +1074,7 @@ fn scripts(
             config.starting_career.as_deref().unwrap_or(""),
         ),
         ("__STARTING_OFFICERS__", officers.as_str()),
+        ("__STARTING_RELATIONSHIPS__", relationships.as_str()),
         ("__STARTING_ANCILLARIES__", equipment.as_str()),
         ("__START_REGION__", site.key.as_str()),
         ("__START_X__", start_x.as_str()),

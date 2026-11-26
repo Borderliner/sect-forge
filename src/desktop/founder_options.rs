@@ -13,6 +13,7 @@ use gpui_component::{Disableable, Selectable, Sizable, button::ButtonVariants};
 
 pub(super) struct OfficerDraft {
     names: [Entity<InputState>; 2],
+    age: Entity<InputState>,
     subtype: &'static str,
     female: bool,
     editing: Option<usize>,
@@ -22,6 +23,11 @@ pub(super) struct OfficerDraft {
 impl OfficerDraft {
     pub(super) fn new(window: &mut Window, cx: &mut Context<Editor>) -> Self {
         Self {
+            age: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("Random")
+                    .validate(|s, _| s.len() <= 2 && s.bytes().all(|b| b.is_ascii_digit()))
+            }),
             names: ["Family name", "Given name"].map(|label| {
                 cx.new(|cx| {
                     InputState::new(window, cx)
@@ -39,6 +45,8 @@ impl OfficerDraft {
     pub(super) fn reset(&mut self, window: &mut Window, cx: &mut Context<Editor>) {
         self.editing = None;
         self.error = None;
+        self.age
+            .update(cx, |input, cx| input.set_value("", window, cx));
         for input in &self.names {
             input.update(cx, |input, cx| input.set_value("", window, cx));
         }
@@ -369,7 +377,18 @@ impl Editor {
             cx.notify();
             return;
         }
+        let age = self.officer_draft.age.read(cx).value();
+        let age = if age.is_empty() {
+            None
+        } else if let Some(n) = age.parse::<u8>().ok().filter(|n| (18..=80).contains(n)) {
+            Some(n)
+        } else {
+            self.officer_draft.error = Some("Choose an officer age between 18 and 80.".into());
+            cx.notify();
+            return;
+        };
         let officer = Officer {
+            age,
             surname,
             forename,
             subtype: self.officer_draft.subtype.into(),
@@ -391,6 +410,9 @@ impl Editor {
             .child(panel().gap_3().child(caption(if draft.editing.is_some() { "Edit officer" } else { "New officer" }))
                 .child(body("Starting officers join your court on the first turn and can be deployed or appointed from there."))
                 .child(row_ui().gap_3().children(draft.names.iter().map(|input| col().flex_1().child(Input::new(input)) )))
+                .child(row_ui().gap_2().items_center()
+                    .child(caption("Starting age (18–80)"))
+                    .child(gpui::div().w(px(90.)).child(Input::new(&draft.age))))
                 .child(row_ui().gap_2().children([(false, "Male"), (true, "Female")].map(|(female, label)| {
                     control(label, draft.female == female).child(label)
                         .on_click(cx.listener(move |editor, _, _, cx| {
@@ -434,6 +456,10 @@ impl Editor {
                             editor.officer_draft.editing = Some(index);
                             editor.officer_draft.subtype = class.0;
                             editor.officer_draft.female = officer.female;
+                            let age = officer.age.map(|n| n.to_string()).unwrap_or_default();
+                            editor.officer_draft.age.update(cx, |input, cx| {
+                                input.set_value(age, window, cx);
+                            });
                             editor.officer_draft.error = None;
                             for (input, name) in editor.officer_draft.names.iter().zip([&officer.surname, &officer.forename]) {
                                 input.update(cx, |input, cx| input.set_value(name.clone(), window, cx));
@@ -443,6 +469,8 @@ impl Editor {
                     .child(control(format!("remove-officer-{index}"), false).child("Remove")
                         .on_click(cx.listener(move |editor, _, window, cx| {
                             editor.config.officers.remove(index);
+                            crate::relationships::remove_officer(&mut editor.config.relationships, index);
+                            editor.relationship_editor.clear_selection();
                             match editor.officer_draft.editing {
                                 Some(current) if current == index => editor.officer_draft.reset(window, cx),
                                 Some(current) if current > index => editor.officer_draft.editing = Some(current - 1),

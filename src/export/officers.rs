@@ -32,6 +32,7 @@ pub(super) fn write(
         .context("Missing family name template")?;
     let mut new_names = Vec::new();
     let mut new_templates = Vec::new();
+    let mut ages = Vec::new();
     let mut new_modes = Vec::new();
     for (index, officer) in config.officers.iter().enumerate() {
         let key = Officer::key(faction, index);
@@ -65,6 +66,15 @@ pub(super) fn write(
         set(&mut row, "is_male", !officer.female);
         set(&mut row, "unique", true);
         set(&mut row, "can_be_born", false);
+        if let Some(age) = officer.age {
+            set(&mut row, "spawn_age_range", key.as_str());
+            ages.push(super::row! {
+                "key": key, "has_valid_birth_year": true, "birth_year": 190 - i32::from(age),
+                "min_age_for_birth_year": 0, "max_age_for_birth_year": 1000,
+                "min_random_age": age, "max_random_age": age, "min_spawn_year": 190,
+                "max_spawn_year": 190, "min_spawn_year_round": 0, "max_spawn_year_round": 999
+            });
+        }
         if officer.female && field(donor, "key") == male {
             let voice = if element == "wood" {
                 "vo_actor_group_hero_Zheng_Jiang"
@@ -90,6 +100,7 @@ pub(super) fn write(
         }
     }
     let suffix = format!("{faction}_officers");
+    add_rows(pack, "character_generation_spawn_age_ranges", &suffix, ages)?;
     add_rows(pack, "names", &suffix, new_names)?;
     add_rows(pack, officer_templates, &suffix, new_templates)?;
     add_rows(pack, CLASS_TABLE, &suffix, new_modes)

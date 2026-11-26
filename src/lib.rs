@@ -7,6 +7,7 @@ mod expanded;
 pub mod export;
 pub mod game;
 pub mod portraits;
+pub mod relationships;
 mod startpos;
 mod trom;
 mod unlocks;

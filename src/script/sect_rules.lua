@@ -9,6 +9,7 @@ local influence_cap = __INFLUENCE_CAP__
 local starting_traits = { __STARTING_TRAITS__ }
 local starting_career = "__STARTING_CAREER__"
 local starting_officers = { __STARTING_OFFICERS__ }
+local starting_relationships = { __STARTING_RELATIONSHIPS__ }
 local starting_ancillaries = { __STARTING_ANCILLARIES__ }
 local starting_region = "__START_REGION__"
 local start_x, start_y = __START_X__, __START_Y__
@@ -229,6 +230,36 @@ local function create_starting_officers(owner)
     end
 end
 
+local function apply_starting_relationship(link)
+    local model = cm:query_model()
+    local first, second = model:character_for_template(link[1]), model:character_for_template(link[3])
+    if not first or first:is_null_interface() or first:is_dead()
+        or not second or second:is_null_interface() or second:is_dead() then return false end
+    local tie = link[2]
+    if tie == "spouse" then
+        local a, b = first:family_member(), second:family_member()
+        if a:is_null_interface() or b:is_null_interface() then return false end
+        if a:has_spouse() or b:has_spouse() then
+            return a:has_spouse() and a:spouse():character():command_queue_index() == second:command_queue_index()
+        end
+        cm:modify_character(first):family_member():marry_character(cm:modify_character(second):family_member())
+    elseif tie == "parent" then
+        local child = second:family_member()
+        if child:is_null_interface() then return false end
+        if first:is_male() and child:has_father() then
+            return child:father():character():command_queue_index() == first:command_queue_index()
+        elseif not first:is_male() and child:has_mother() then
+            return child:mother():character():command_queue_index() == first:command_queue_index()
+        end
+        cm:modify_character(second):make_child_of(cm:modify_character(first))
+    else
+        local trigger = tie == "friend" and "3k_main_relationship_trigger_set_event_childhood_friends"
+            or "3k_main_relationship_trigger_set_event_childhood_rivals"
+        cm:modify_character(first):apply_relationship_trigger_set(second, trigger)
+    end
+    return true
+end
+
 local function update_influence_effects()
     local owner = faction()
     local resource = owner:pooled_resources():resource(resource_key)
@@ -421,6 +452,15 @@ cm:add_first_tick_callback_new(function()
         set_starting_career(owner)
         equip_starting_ancillaries(owner)
         if #starting_officers > 0 then create_starting_officers(owner) end
+        if #starting_relationships > 0 then
+            cm:callback(function()
+                for _, link in ipairs(starting_relationships) do
+                    if not apply_starting_relationship(link) then
+                        script_error("Sect Forge could not set " .. link[1] .. " " .. link[2] .. " " .. link[3])
+                    end
+                end
+            end, 0.2)
+        end
         if expanded_start then deploy_expanded_army(owner) end
         if not is_warlord then cm:modify_faction(faction_key):set_tech_research_cooldown(0) end
         if not start_preplaced and starting_region ~= hepu then place_starting_city(owner) end

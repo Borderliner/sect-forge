@@ -82,6 +82,8 @@ pub struct Officer {
     pub subtype: String,
     #[serde(default)]
     pub female: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub age: Option<u8>,
 }
 
 impl Officer {
@@ -135,6 +137,8 @@ pub struct Config {
     pub starting_career: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub officers: Vec<Officer>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relationships: Vec<crate::relationships::Relationship>,
     pub primary_colour: String,
     pub secondary_colour: String,
     #[serde(default)]
@@ -189,6 +193,7 @@ impl Default for Config {
             founder_attributes: BTreeMap::new(),
             starting_career: None,
             officers: Vec::new(),
+            relationships: Vec::new(),
             primary_colour: "A34434".into(),
             secondary_colour: "D3AD6C".into(),
             faction_key: None,
@@ -311,6 +316,10 @@ impl Config {
             "Choose up to {MAX_OFFICERS} starting officers."
         );
         for (index, officer) in self.officers.iter_mut().enumerate() {
+            ensure!(
+                officer.age.is_none_or(|age| (18..=80).contains(&age)),
+                "Officer ages must be between 18 and 80."
+            );
             for name in [&mut officer.forename, &mut officer.surname] {
                 *name = name.trim().to_owned();
                 ensure!(
@@ -324,6 +333,25 @@ impl Config {
                 "Choose a class for officer {}.",
                 index + 1
             );
+        }
+        for link in &self.relationships {
+            use crate::relationships::Person;
+            ensure!(
+                link.first != link.second,
+                "Choose two different characters."
+            );
+            for person in [&link.first, &link.second] {
+                match person {
+                    Person::Founder => {}
+                    Person::Officer(i) => {
+                        ensure!(*i < self.officers.len(), "A selected officer is missing.")
+                    }
+                    Person::Historical(key) => ensure!(
+                        ART_SET.is_match(key) && !key.starts_with("sects_"),
+                        "Invalid historical character template."
+                    ),
+                }
+            }
         }
         for value in [&mut self.primary_colour, &mut self.secondary_colour] {
             *value = value.trim().trim_start_matches('#').to_ascii_uppercase();

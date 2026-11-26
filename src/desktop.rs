@@ -42,6 +42,7 @@ mod catalog;
 mod founder_options;
 mod game_font;
 mod name_generator;
+mod relationship_editor;
 #[cfg(windows)]
 mod updater;
 mod warlord_picker;
@@ -159,6 +160,7 @@ enum FounderTab {
     Loadout,
     Career,
     Officers,
+    Relationships,
 }
 
 #[derive(Clone, Copy)]
@@ -223,6 +225,7 @@ struct Editor {
     founder_title: Entity<InputState>,
     attribute_inputs: [Entity<InputState>; 5],
     officer_draft: founder_options::OfficerDraft,
+    relationship_editor: relationship_editor::RelationshipEditor,
     #[cfg(windows)]
     update_status: updater::Status,
     search: Entity<InputState>,
@@ -459,6 +462,7 @@ impl Editor {
             founder_title,
             attribute_inputs,
             officer_draft,
+            relationship_editor: Default::default(),
             #[cfg(windows)]
             update_status: updater::Status::Current,
             search,
@@ -539,6 +543,8 @@ impl Editor {
                                 }
                             }
                             editor.workshop = workshop;
+                            editor.relationship_editor = Default::default();
+                            editor.load_relationships(cx);
                             if let Some(Ok(map)) = editor.expanded_map.take() {
                                 for id in map.art {
                                     editor.artwork.discard(id);
@@ -670,6 +676,9 @@ impl Editor {
     fn change_page(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         if self.page != page {
             self.page = page;
+            if page == Page::Founder {
+                self.load_relationships(cx);
+            }
             self.clear_search(window, cx);
             self.motion += 1;
             cx.notify();
@@ -738,10 +747,12 @@ impl Editor {
                                 input.update(cx, |input, cx| input.set_value(value, window, cx));
                             }
                             editor.officer_draft.reset(window, cx);
+                            editor.relationship_editor.clear_selection();
                             if let Some(warlord) = config.warlord() {
                                 editor.playstyle_family = warlord.family;
                             }
                             editor.config = config;
+                            editor.load_relationships(cx);
                             editor.load_expanded(cx);
                             editor.select_source(None);
                             if let Some(path) = source {
@@ -959,6 +970,7 @@ impl Editor {
     }
 
     fn expanded_base(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.relationship_editor.clear_selection();
         self.config.expanded_compat = enabled;
         self.city_filter = "All";
         if enabled {
@@ -1627,6 +1639,7 @@ impl Editor {
             (FounderTab::Traits, "Traits"),
             (FounderTab::Loadout, "Equipment"),
             (FounderTab::Officers, "Starting officers"),
+            (FounderTab::Relationships, "Relationships"),
         ];
         col()
             .gap_5()
@@ -1652,6 +1665,7 @@ impl Editor {
                             .child(text)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.founder_tab = tab;
+                                this.load_relationships(cx);
                                 this.clear_search(window, cx);
                                 this.motion += 1;
                                 cx.notify();
@@ -1665,6 +1679,7 @@ impl Editor {
                 FounderTab::Loadout => self.equipment(cx),
                 FounderTab::Career => self.career_picker(window, cx),
                 FounderTab::Officers => self.officers(cx),
+                FounderTab::Relationships => self.relationships(cx),
             })
             .into_any_element()
     }
@@ -2946,6 +2961,7 @@ impl Editor {
                         .child(self.toggle("trom", "TROM compatibility", compatibility, self.config.trom_compat,
                             |this, _| {
                                 this.config.trom_compat = !this.config.trom_compat;
+                                this.relationship_editor.clear_selection();
                                 if this.config.trom_compat {
                                     this.config.expanded_compat = false;
                                     this.city_filter = "All";

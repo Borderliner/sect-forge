@@ -105,6 +105,12 @@ pub struct Game {
 }
 
 impl Game {
+    pub(crate) fn relationship_labels(&self) -> Result<Localization> {
+        let english = open_pack(&self.local_en)?;
+        let mut loc = localization(&english, "text/db/names__.loc")?;
+        loc.extend(localization(&english, "text/db/factions__.loc")?);
+        Ok(loc)
+    }
     pub fn open(path: &Path) -> Result<Self> {
         let pack = Pack::read_and_merge_ca_packs(info(), path)
             .with_context(|| format!("Read the Three Kingdoms game files in {}", path.display()))?;

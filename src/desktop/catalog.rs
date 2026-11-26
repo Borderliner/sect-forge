@@ -36,6 +36,7 @@ pub(super) enum Catalog {
     Careers,
     Equipment,
     Workshop,
+    Characters,
 }
 
 impl Catalog {
@@ -46,6 +47,7 @@ impl Catalog {
             Self::Careers => "careers",
             Self::Equipment => "items",
             Self::Workshop => "packs",
+            Self::Characters => "characters",
         }
     }
 
@@ -54,7 +56,9 @@ impl Catalog {
             Self::Portraits => 24,
             Self::Careers if view == CatalogView::Grid => 18,
             Self::Traits if view == CatalogView::List => 10,
-            Self::Careers | Self::Traits | Self::Equipment | Self::Workshop => 12,
+            Self::Careers | Self::Traits | Self::Equipment | Self::Workshop | Self::Characters => {
+                12
+            }
         }
     }
 }
