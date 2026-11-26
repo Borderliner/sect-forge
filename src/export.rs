@@ -246,6 +246,8 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
                 format!("Apply {}’s {} campaign playstyle", warlord.name, mode.key())
             })?;
         }
+        let generated = crate::relationships::prepare_startpos(generated, &config.relationships)
+            .with_context(|| format!("Set starting social relationships in {}", mode.key()))?;
         add(&mut pack, &path, &generated)?;
     }
 

@@ -536,9 +536,17 @@ fn transplant(
         site,
         site.owner.is_some(),
     )?;
+    finish_campaign(frontend_edit, edit)
+}
+
+pub(crate) fn finish_campaign(
+    mut frontend_edit: Edit<'_>,
+    world_edit: Edit<'_>,
+) -> Result<Vec<u8>> {
+    let frontend = frontend_edit.doc;
     let container = frontend.one(&frontend.root, "COMPRESSED_DATA")?;
     let mut bytes = frontend.data[container.start..container.fields()[0].start - 5].to_vec();
-    bytes.extend(compression_record(&frontend.data, &edit.finish()?)?);
+    bytes.extend(compression_record(&frontend.data, &world_edit.finish()?)?);
     frontend_edit.replace(container, bytes);
     frontend_edit.finish()
 }

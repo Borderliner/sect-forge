@@ -247,6 +247,33 @@ impl Document {
             .with_context(|| format!("Expected a CAAB identifier at {}", node.start))
     }
 
+    /// Character relationship members are stored as an array of two compressed CQIs.
+    pub fn id_pair(&self, node: &Node) -> Result<[u32; 2]> {
+        let bytes = self.raw(node);
+        let (size, start) = sized(bytes, 1)?;
+        let data = bytes
+            .get(start..)
+            .context("Truncated relationship members")?;
+        ensure!(size == data.len(), "Invalid relationship member array size");
+        let ids = match (node.kind, data) {
+            (0x56, [a, b]) => [u32::from(*a), u32::from(*b)],
+            (0x57, [a, b, c, d]) => [
+                u16::from_le_bytes([*a, *b]).into(),
+                u16::from_le_bytes([*c, *d]).into(),
+            ],
+            (0x58, [a, b, c, d, e, f]) => [
+                u32::from_be_bytes([0, *a, *b, *c]),
+                u32::from_be_bytes([0, *d, *e, *f]),
+            ],
+            (0x48, [a, b, c, d, e, f, g, h]) => [
+                u32::from_le_bytes([*a, *b, *c, *d]),
+                u32::from_le_bytes([*e, *f, *g, *h]),
+            ],
+            _ => bail!("Unsupported relationship member array at {}", node.start),
+        };
+        Ok(ids)
+    }
+
     pub fn find<'a>(&'a self, node: &'a Node, name: &str) -> Vec<&'a Node> {
         let mut found = Vec::new();
         node.visit(&|node| self.name(node) == name, &mut found);
@@ -376,6 +403,47 @@ impl<'a> Edit<'a> {
 
     pub fn append(&mut self, array: &Node, bytes: Vec<u8>) {
         self.groups.entry(array.start).or_default().push(bytes);
+    }
+
+    /// Keep each retained group's original encoded length and payload.
+    pub fn retain_groups(
+        &mut self,
+        array: &Node,
+        keep: impl Fn(&[Node]) -> Result<bool>,
+    ) -> Result<bool> {
+        ensure!(
+            array.kind & (RECORD | ARRAY) == RECORD | ARRAY,
+            "Expected a CAAB record array"
+        );
+        let data = self.doc.raw(array);
+        let header = if array.kind & EXTENDED != 0 || array.start == 16 {
+            4
+        } else {
+            2
+        };
+        let (_, count_at) = sized(data, header)?;
+        let (_, mut cursor) = sized(data, count_at)?;
+        let count_width = cursor - count_at;
+        let mut body = Vec::new();
+        let mut count = 0;
+        for group in &array.groups {
+            let (length, payload) = sized(data, cursor)?;
+            let end = payload + length;
+            if keep(group)? {
+                body.extend_from_slice(&data[cursor..end]);
+                count += 1;
+            }
+            cursor = end;
+        }
+        if count == array.groups.len() {
+            return Ok(false);
+        }
+        let mut bytes = data[..header].to_vec();
+        append_size(&mut bytes, body.len(), count_at - header)?;
+        append_size(&mut bytes, count, count_width)?;
+        bytes.extend(body);
+        self.replace(array, bytes);
+        Ok(true)
     }
 
     pub fn import(

@@ -59,6 +59,13 @@ fn export_against_installed_campaigns() -> Result<()> {
                     tie: Tie::Friend,
                     second: Person::Historical(LIU_BEI.into()),
                 },
+                Relationship {
+                    first: Person::Historical(
+                        "3k_main_template_historical_gongsun_zan_hero_fire".into(),
+                    ),
+                    tie: Tie::Rival,
+                    second: Person::Historical(LIU_BEI.into()),
+                },
             ],
             trom_compat,
             expanded_compat,

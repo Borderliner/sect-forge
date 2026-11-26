@@ -183,7 +183,7 @@ impl Editor {
         }
         editor = editor
             .when(matches!(state.tie, Tie::Friend | Tie::Rival), |c| {
-                c.child(body("The pair gains a shared childhood memory. Earlier history between these characters also counts toward their relationship."))
+                c.child(body("This sets the pair’s relationship on turn one of a new campaign. Later events can change it."))
             })
             .child(pair)
             .child(

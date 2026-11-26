@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    caab::Document,
+    caab::{Document, Edit},
     config::{CAMPAIGN, Config, Officer},
     game::{self, Game, Localization},
     portraits::words,
@@ -62,6 +62,56 @@ pub struct Relationship {
     pub first: Person,
     pub tie: Tie,
     pub second: Person,
+}
+
+/// The new-campaign script applies one native memory. Clear the selected historical
+/// pairs' stored scores and memories first, so older memories cannot cancel that choice.
+pub(crate) fn prepare_startpos(bytes: Vec<u8>, links: &[Relationship]) -> Result<Vec<u8>> {
+    let pairs: Vec<_> = links
+        .iter()
+        .filter_map(|link| match (&link.first, link.tie, &link.second) {
+            (Person::Historical(a), Tie::Friend | Tie::Rival, Person::Historical(b)) => {
+                Some((a, b))
+            }
+            _ => None,
+        })
+        .collect();
+    if pairs.is_empty() {
+        return Ok(bytes);
+    }
+    let (frontend, world) = trom::campaign_documents(&bytes)?;
+    let characters = world.find(&world.root, "PERSISTENT_CHARACTER");
+    let mut ids = HashMap::new();
+    for character in characters {
+        let fields = character.fields();
+        if let Some(template) = fields.get(10).and_then(|field| world.text(field)) {
+            ids.insert(template, world.id(&fields[0])?);
+        }
+    }
+    let mut selected = HashSet::new();
+    for (a, b) in pairs {
+        let id = |key: &str| {
+            ids.get(key)
+                .copied()
+                .with_context(|| format!("Missing historical character {key}"))
+        };
+        let mut pair = [id(a)?, id(b)?];
+        pair.sort_unstable();
+        selected.insert(pair);
+    }
+    let manager = world.one(&world.root, "CHARACTER_RELATIONSHIPS")?;
+    let array = world.one(manager, "RELATIONSHIP")?;
+    let mut edit = Edit::new(&world);
+    let changed = edit.retain_groups(array, |row| {
+        let mut pair = world.id_pair(row.get(4).context("Missing relationship members")?)?;
+        pair.sort_unstable();
+        Ok(!selected.contains(&pair))
+    })?;
+    if changed {
+        trom::finish_campaign(Edit::new(&frontend), edit)
+    } else {
+        Ok(bytes)
+    }
 }
 
 pub(crate) fn remove_officer(links: &mut Vec<Relationship>, index: usize) {
@@ -387,6 +437,66 @@ mod tests {
 
     fn link(first: Person, tie: Tie, second: Person) -> Relationship {
         Relationship { first, tie, second }
+    }
+
+    #[test]
+    fn selecting_rivals_replaces_only_the_pairs_existing_social_history() -> Result<()> {
+        use crate::startpos::Mode;
+        const LIU: &str = "3k_main_template_historical_liu_bei_hero_earth";
+        const ZAN: &str = "3k_main_template_historical_gongsun_zan_hero_fire";
+        let choice = link(
+            Person::Historical(ZAN.into()),
+            Tie::Rival,
+            Person::Historical(LIU.into()),
+        );
+        let template = game::template()?;
+        for mode in Mode::ALL {
+            let path = format!("campaigns/{CAMPAIGN}/startpos_{}.esf", mode.key());
+            let bytes = game::raw(&template, &path)?;
+            let (_, before) = trom::campaign_documents(&bytes)?;
+            let id = |name: &str| {
+                before.id(&before.record("PERSISTENT_CHARACTER", 10, name)?.fields()[0])
+            };
+            let mut selected = [id(LIU)?, id(ZAN)?];
+            selected.sort_unstable();
+            let mut expected = Vec::new();
+            let rows = before.one(&before.root, "RELATIONSHIP")?;
+            for row in &rows.groups {
+                let mut ids = before.id_pair(&row[4])?;
+                ids.sort_unstable();
+                if ids == selected {
+                    assert_eq!(
+                        before.text(&row[1]),
+                        Some("3k_main_relationship_positive_02")
+                    );
+                } else {
+                    expected.push(
+                        row.iter()
+                            .flat_map(|n| before.raw(n).iter().copied())
+                            .collect::<Vec<_>>(),
+                    );
+                }
+            }
+            assert_eq!(rows.groups.len(), expected.len() + 1);
+            let result = prepare_startpos(bytes, std::slice::from_ref(&choice))?;
+            let (_, after) = trom::campaign_documents(&result)?;
+            let actual: Vec<Vec<u8>> = after
+                .one(&after.root, "RELATIONSHIP")?
+                .groups
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .flat_map(|n| after.raw(n).iter().copied())
+                        .collect()
+                })
+                .collect();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                before.raw(before.one(&before.root, "FAMILY_TREE")?),
+                after.raw(after.one(&after.root, "FAMILY_TREE")?)
+            );
+        }
+        Ok(())
     }
 
     #[test]

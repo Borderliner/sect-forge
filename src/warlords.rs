@@ -7,7 +7,7 @@ use crate::{
     caab::{Document, Edit},
     config::{CAMPAIGN, Warlord, WarlordFamily},
     game::{Row, add, add_rows_like, field, raw, record_id, row_keys, rows_at, set},
-    startpos::{compression_record, open_world},
+    startpos::open_world,
 };
 
 pub struct Playstyle {
@@ -491,9 +491,5 @@ pub fn startpos(bytes: &[u8], generated: &[u8], donor: &Warlord, key: &str) -> R
         let bytes = edit.import(&source, from, &overrides)?;
         edit.replace(to, bytes);
     }
-    let mut outer = Edit::new(&target);
-    let mut replacement = target.data[container.start..marker - 5].to_vec();
-    replacement.extend(compression_record(&target.data, &edit.finish()?)?);
-    outer.replace(container, replacement);
-    outer.finish()
+    crate::trom::finish_campaign(Edit::new(&target), edit)
 }
