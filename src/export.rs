@@ -300,6 +300,7 @@ pub fn build(game: &Game, config: Config, output: &Path, report: impl Fn(&str)) 
             )?;
         }
     }
+    crate::relationships::write_bond_triggers(&mut pack, &key, &config.relationships)?;
     scripts(&mut pack, &config, site, &key, &equipment)?;
     add_loc(&mut pack, &format!("text/db/{key}.loc"), loc)?;
     pack.set_dependencies(dependencies.into_iter().map(|name| (true, name)).collect());

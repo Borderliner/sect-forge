@@ -128,7 +128,9 @@ impl Editor {
                     (Tie::Spouse, "Spouse"),
                     (Tie::Parent, "Parent → child"),
                     (Tie::Friend, "Friends"),
+                    (Tie::Oathsworn, "Oathsworn"),
                     (Tie::Rival, "Rivals"),
+                    (Tie::Nemesis, "Nemeses"),
                 ]
                 .map(|(tie, label)| {
                     control(label, state.tie == tie)
@@ -182,7 +184,7 @@ impl Editor {
             );
         }
         editor = editor
-            .when(matches!(state.tie, Tie::Friend | Tie::Rival), |c| {
+            .when(state.tie.is_social(), |c| {
                 c.child(body("This sets the pair’s relationship on turn one of a new campaign. Later events can change it."))
             })
             .child(pair)

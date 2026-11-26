@@ -230,6 +230,13 @@ local function create_starting_officers(owner)
     end
 end
 
+local starting_social_memories = {
+    friend = "3k_main_relationship_trigger_set_event_childhood_friends",
+    oathsworn = faction_key .. "_bond_oathsworn",
+    rival = "3k_main_relationship_trigger_set_event_childhood_rivals",
+    nemesis = faction_key .. "_bond_nemesis",
+}
+
 local function apply_starting_relationship(link)
     local model = cm:query_model()
     local first, second = model:character_for_template(link[1]), model:character_for_template(link[3])
@@ -253,8 +260,8 @@ local function apply_starting_relationship(link)
         end
         cm:modify_character(second):make_child_of(cm:modify_character(first))
     else
-        local trigger = tie == "friend" and "3k_main_relationship_trigger_set_event_childhood_friends"
-            or "3k_main_relationship_trigger_set_event_childhood_rivals"
+        local trigger = starting_social_memories[tie]
+        if not trigger then return false end
         cm:modify_character(first):apply_relationship_trigger_set(second, trigger)
     end
     return true

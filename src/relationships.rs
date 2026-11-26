@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, Result, ensure};
+use rpfm_lib::files::pack::Pack;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -36,15 +37,26 @@ pub enum Tie {
     Spouse,
     Parent,
     Friend,
+    Oathsworn,
     Rival,
+    Nemesis,
 }
 impl Tie {
+    pub(crate) fn is_social(self) -> bool {
+        matches!(
+            self,
+            Self::Friend | Self::Oathsworn | Self::Rival | Self::Nemesis
+        )
+    }
+
     pub(crate) fn verb(self) -> &'static str {
         match self {
             Self::Spouse => "is married to",
             Self::Parent => "is a parent of",
             Self::Friend => "is friends with",
+            Self::Oathsworn => "is oathsworn to",
             Self::Rival => "is a rival of",
+            Self::Nemesis => "is the nemesis of",
         }
     }
     pub(crate) fn key(self) -> &'static str {
@@ -52,7 +64,9 @@ impl Tie {
             Self::Spouse => "spouse",
             Self::Parent => "parent",
             Self::Friend => "friend",
+            Self::Oathsworn => "oathsworn",
             Self::Rival => "rival",
+            Self::Nemesis => "nemesis",
         }
     }
 }
@@ -64,15 +78,55 @@ pub struct Relationship {
     pub second: Person,
 }
 
-/// The new-campaign script applies one native memory. Clear the selected historical
+pub(crate) fn write_bond_triggers(
+    pack: &mut Pack,
+    faction: &str,
+    links: &[Relationship],
+) -> Result<()> {
+    use crate::export::row;
+    for (tie, sign) in [(Tie::Oathsworn, "positive"), (Tie::Nemesis, "negative")] {
+        if !links.iter().any(|link| link.tie == tie) {
+            continue;
+        }
+        let key = format!("{faction}_bond_{}", tie.key());
+        // Apply one maximum-strength memory directly to this pair on the first tick.
+        // Multiple weaker memories can leave the pair at the intermediate tier.
+        for (table, entry) in [
+            ("character_relationship_trigger_sets", row! { "key": key }),
+            (
+                "character_relationship_trigger_set_items",
+                row! {
+                    "set": key, "target": "CHARACTER_ONLY", "trigger": key
+                },
+            ),
+            (
+                "character_relationship_triggers",
+                row! {
+                    "key": key, "conditions": "3k_main_relationship_condition_set_any",
+                    "memory": format!("3k_main_relationship_memory_campaign_event_{sign}"),
+                    "memory_relevancy_decay_per_turn": 5
+                },
+            ),
+            (
+                "character_relationship_trigger_effects",
+                row! {
+                    "trigger": key, "effect": format!("relationship_effect_permanent_{sign}_max")
+                },
+            ),
+        ] {
+            game::add_rows(pack, table, &key, vec![entry])?;
+        }
+    }
+    Ok(())
+}
+
+/// The new-campaign script applies native memories. Clear the selected historical
 /// pairs' stored scores and memories first, so older memories cannot cancel that choice.
 pub(crate) fn prepare_startpos(bytes: Vec<u8>, links: &[Relationship]) -> Result<Vec<u8>> {
     let pairs: Vec<_> = links
         .iter()
         .filter_map(|link| match (&link.first, link.tie, &link.second) {
-            (Person::Historical(a), Tie::Friend | Tie::Rival, Person::Historical(b)) => {
-                Some((a, b))
-            }
+            (Person::Historical(a), tie, Person::Historical(b)) if tie.is_social() => Some((a, b)),
             _ => None,
         })
         .collect();
@@ -350,9 +404,9 @@ impl Roster {
             ensure!(a != b, "Choose two different characters.");
             let pair = if a < b { (&a, &b) } else { (&b, &a) };
             match r.tie {
-                Tie::Friend | Tie::Rival => ensure!(
+                Tie::Friend | Tie::Oathsworn | Tie::Rival | Tie::Nemesis => ensure!(
                     selected.insert((pair.0.clone(), pair.1.clone(), false)),
-                    "This pair already has a friendship or rivalry."
+                    "This pair already has a starting social relationship. Remove it before choosing another."
                 ),
                 Tie::Spouse => {
                     ensure!(
@@ -575,20 +629,22 @@ mod tests {
                 .validate(&config, true, &[conflicting_parent])
                 .is_err()
         );
-        let social = link(daughter.clone(), Tie::Friend, Person::Founder);
-        assert!(
-            roster
-                .validate(&config, true, std::slice::from_ref(&social))
-                .is_ok()
-        );
-        assert!(
-            roster
-                .validate(
-                    &config,
-                    true,
-                    &[social, link(Person::Founder, Tie::Rival, daughter)]
-                )
-                .is_err()
-        );
+        let social_ties = [Tie::Friend, Tie::Oathsworn, Tie::Rival, Tie::Nemesis];
+        for tie in social_ties {
+            let social = link(daughter.clone(), tie, Person::Founder);
+            assert!(
+                roster
+                    .validate(&config, true, std::slice::from_ref(&social))
+                    .is_ok()
+            );
+            for other in social_ties {
+                let reversed = link(Person::Founder, other, daughter.clone());
+                assert!(
+                    roster
+                        .validate(&config, true, &[social.clone(), reversed])
+                        .is_err()
+                );
+            }
+        }
     }
 }

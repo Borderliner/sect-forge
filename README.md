@@ -42,7 +42,7 @@
 | **Founder** | Set the founder’s name, class, age (18–60), and five base attributes in **Personal details**. Browse playable male and female artwork in **Portrait**. |
 | **Career** | Search backgrounds available in the selected campaign, such as Zhao Yun’s *Light in the Dark*, and preview their effects. |
 | **Starting officers** | Create up to 12 additional officers. Choose each officer’s name, class, gender, and optional age (18–80). They join your court on the first turn. |
-| **Relationships** | Pair the founder, starting officers, or historical characters as spouses, parent and child, friends, or rivals. Choosing Friends or Rivals replaces that pair’s starting social history on turn one of a new campaign. Later events can change the bond. Assign a shared parent to create siblings. Set a custom officer’s age under **Starting officers** before assigning parentage. |
+| **Relationships** | Choose Friends, Oathsworn, Rivals, or Nemeses between the founder, starting officers, and historical characters. Your choice replaces the pair’s starting social history on turn one of a new campaign. Later events can change the bond. You can also add a spouse or assign parents and children. Assign a shared parent to create siblings. Set a custom officer’s age under **Starting officers** before assigning parentage. |
 | **Traits** | Browse 84 traits with their icons, gameplay effects, and scopes. Switch between List and Grid and filter by element, Good, or Bad. Choose up to three starting traits, including one physical trait. |
 | **Equipment** | Browse all five equipment slots from the installed game and DLCs, including gear from the selected TROM or 190 Expanded campaign. Compare combat stats and character bonuses, see Romance and Records differences, and check which items your founder can equip. |
 | **Settlement** | Browse 88 base-game starts or open the installed 190 Expanded map to choose eligible settlements in Korea and the northwest. |
@@ -148,7 +148,7 @@ Use `--game` to specify the installation and `--output` to choose an export fold
 | `founderAttributes` | Optional values from 5 to 200 keyed by `authority`, `expertise`, `resolve`, `instinct`, and `cunning`. Omitted attributes use the class defaults. |
 | `startingCareer` | Optional career key, such as `3k_main_ceo_career_historical_zhao_yun`. |
 | `officers` | Up to 12 officer objects with `surname`, `forename`, `subtype`, `female`, and optional `age`. |
-| `relationships` | An array of links. For example, `{"first":"founder","tie":"parent","second":{"officer":0}}` makes the founder a parent of the first officer. Use `{"historical":"<character template key>"}` for a campaign character. Valid ties are `spouse`, `parent`, `friend`, and `rival`. |
+| `relationships` | An array of links. For example, `{"first":"founder","tie":"oathsworn","second":{"officer":0}}` makes the founder and the first officer Oathsworn. Use `{"historical":"<character template key>"}` for a campaign character. Valid ties are `spouse`, `parent`, `friend`, `oathsworn`, `rival`, and `nemesis`. |
 | `artSet`, `portraitPack` | Portrait key and optional source pack path. |
 | `subtype`, `startRegion` | Class and supported starting region keys, such as `3k_general_metal` and `3k_main_yizhou_island_capital`. |
 | `startingTraits` | Array of trait keys, such as `3k_main_ceo_trait_personality_brave`. |

@@ -22,6 +22,7 @@ fn export_against_installed_campaigns() -> Result<()> {
     const SPEAR: &str = "3k_ironic_ancillary_weapon_pang_de_spear_unique";
     const PROGRESSION: &str = "script/campaign/_shared/3k_campaign_progression_extended.lua";
     const LIU_BEI: &str = "3k_main_template_historical_liu_bei_hero_earth";
+    const GONGSUN_ZAN: &str = "3k_main_template_historical_gongsun_zan_hero_fire";
     let workshop = game::workshop_packs();
     for (trom_compat, expanded_compat) in [(false, false), (true, false), (false, true)] {
         let overlays = if trom_compat {
@@ -60,11 +61,14 @@ fn export_against_installed_campaigns() -> Result<()> {
                     second: Person::Historical(LIU_BEI.into()),
                 },
                 Relationship {
-                    first: Person::Historical(
-                        "3k_main_template_historical_gongsun_zan_hero_fire".into(),
-                    ),
-                    tie: Tie::Rival,
+                    first: Person::Historical(GONGSUN_ZAN.into()),
+                    tie: Tie::Nemesis,
                     second: Person::Historical(LIU_BEI.into()),
+                },
+                Relationship {
+                    first: Person::Founder,
+                    tie: Tie::Oathsworn,
+                    second: Person::Officer(0),
                 },
             ],
             trom_compat,
@@ -87,6 +91,25 @@ fn export_against_installed_campaigns() -> Result<()> {
             "{{\"{key}_leader\", \"parent\", \"{key}_officer_1\"}}"
         )));
         assert!(rules.contains(&format!("{{\"{key}_officer_1\", \"friend\", \"3k_main_template_historical_liu_bei_hero_earth\"}}")));
+        assert!(rules.contains(&format!(
+            "{{\"{GONGSUN_ZAN}\", \"nemesis\", \"{LIU_BEI}\"}}"
+        )));
+        assert!(rules.contains(&format!(
+            "{{\"{key}_leader\", \"oathsworn\", \"{key}_officer_1\"}}"
+        )));
+        for (tie, sign) in [("oathsworn", "positive"), ("nemesis", "negative")] {
+            let trigger = format!("{key}_bond_{tie}");
+            let effects = game::rows_at(
+                &pack,
+                &db_path("character_relationship_trigger_effects", &trigger),
+            )?;
+            assert_eq!(effects.len(), 1);
+            assert_eq!(field(&effects[0], "trigger"), trigger);
+            assert_eq!(
+                field(&effects[0], "effect"),
+                format!("relationship_effect_permanent_{sign}_max")
+            );
+        }
         let ages = game::rows_at(
             &pack,
             &db_path(
