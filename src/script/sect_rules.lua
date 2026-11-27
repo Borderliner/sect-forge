@@ -38,6 +38,35 @@ local function faction()
     return cm:query_faction(faction_key)
 end
 
+local function vacate_starting_city(owner)
+    local region = cm:query_region(starting_region)
+    if not region or region:is_null_interface() or region:is_abandoned()
+        or region:owning_faction():name() ~= faction_key then return end
+    local residence = region:garrison_residence()
+    if not residence:has_army() then return end
+    local army = residence:army()
+    local old_owner = army:faction()
+    if old_owner:name() == faction_key then return end
+
+    -- Preplaced ownership bypasses the engine's usual eviction on a settlement gift.
+    -- Leaving the garrison releases its army slot but leaves the commander on the city tile.
+    local general = army:general_character()
+    local city = region:settlement()
+    local cx, cy = city:logical_position_x(), city:logical_position_y()
+    cm:modify_model():get_modify_garrison_residence(residence):leave_garrison()
+    -- The former owner can have no valid spawn tiles in the commandery it just lost.
+    for _, search_faction in ipairs({old_owner, owner}) do
+        for _, distance in ipairs({8, 16, 24}) do
+            local found, x, y = search_faction:get_valid_spawn_location_near(cx, cy, distance, true)
+            if found and (x ~= cx or y ~= cy) then
+                cm:modify_character(general):teleport_to(x, y)
+                return
+            end
+        end
+    end
+    script_error("Sect Forge could not find an open tile for the army leaving " .. starting_region)
+end
+
 local function prepare_opening_army(owner, reposition)
     if not owner:has_capital_region() or not owner:has_faction_leader() then return end
     local leader = owner:faction_leader()
@@ -464,6 +493,7 @@ end)
 cm:add_first_tick_callback_new(function()
     local owner = faction()
     if owner and not owner:is_null_interface() and not owner:is_dead() then
+        if start_preplaced then vacate_starting_city(owner) end
         if owner:has_faction_leader() then
             local leader = owner:faction_leader()
             set_starting_traits(leader, starting_traits)
